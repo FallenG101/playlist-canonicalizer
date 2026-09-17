@@ -14,6 +14,19 @@ function sleep(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
+function safeRequestDiagnostic(url, method, status, reason) {
+  let path = new URL(url).pathname.replace(/^\/v1/, '') || '/';
+  path = path
+    .replace(/^\/playlists\/[^/]+\/items$/, '/playlists/{playlist}/items')
+    .replace(/^\/playlists\/[^/]+$/, '/playlists/{playlist}');
+  return Object.freeze({
+    request: `${String(method).toUpperCase()} ${path}`,
+    status,
+    reason,
+    receivedAt: new Date().toISOString(),
+  });
+}
+
 export class SpotifyClient {
   constructor(getAccessToken, { scanCache = null } = {}) {
     this.getAccessToken = getAccessToken;
@@ -57,6 +70,7 @@ export class SpotifyClient {
         );
         error.status = 429;
         error.code = 'QUOTA_EXCEEDED';
+        error.diagnostic = safeRequestDiagnostic(url, method, response.status, reason);
         throw error;
       }
       const parsed = Number(response.headers.get('Retry-After') || 1);
@@ -70,6 +84,7 @@ export class SpotifyClient {
       const error = new Error(`Spotify rate-limited this request. Wait ${Math.ceil(suggestedWait)} seconds, then try again.`);
       error.status = 429;
       error.retryAfter = suggestedWait;
+      error.diagnostic = safeRequestDiagnostic(url, method, response.status, reason || 'RATE_LIMITED');
       throw error;
     }
 

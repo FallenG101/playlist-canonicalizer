@@ -751,11 +751,18 @@ function renderPlaylistPicker(source) {
   updatePlaylistPickerControls();
 }
 
+function liveResponseDiagnostic(error) {
+  const diagnostic = error?.diagnostic;
+  if (!diagnostic?.request || diagnostic.status !== 429 || !diagnostic.reason || !diagnostic.receivedAt) return '';
+  return `Live Spotify response: ${diagnostic.request} → HTTP ${diagnostic.status} → ${diagnostic.reason} · ${diagnostic.receivedAt}. No token or response payload was stored.`;
+}
+
 async function handleScanFailure(error) {
   if (error.code === 'QUOTA_EXCEEDED') {
     sessionStorage.removeItem(RATE_LIMIT_UNTIL_KEY);
     $('#status-title').textContent = 'Spotify development quota exhausted';
-    $('#status-detail').textContent = 'Spotify’s Development Mode quota is unavailable. Spotify does not publish the reset time, so repeated retries will not help. Try again later.';
+    $('#status-detail').textContent = liveResponseDiagnostic(error) ||
+      'Spotify’s Development Mode quota is unavailable. Spotify does not publish the reset time, so repeated retries will not help. Try again later.';
     $('#progress-bar').style.width = '100%';
     statusPanel.classList.remove('hidden');
     showToast('Spotify Development Mode quota exhausted. Repeated retries will not help.');
@@ -764,7 +771,8 @@ async function handleScanFailure(error) {
   if (error.status === 429) {
     const waitSeconds = Math.max(1, Math.ceil(error.retryAfter || 1));
     $('#status-title').textContent = 'Spotify paused the scan';
-    $('#status-detail').textContent = `Spotify asked the app to wait ${waitSeconds} second${waitSeconds === 1 ? '' : 's'}. No more requests were sent. Wait, then select playlists again.`;
+    $('#status-detail').textContent = liveResponseDiagnostic(error) ||
+      `Spotify asked the app to wait ${waitSeconds} second${waitSeconds === 1 ? '' : 's'}. No more requests were sent. Wait, then select playlists again.`;
     $('#progress-bar').style.width = '100%';
     statusPanel.classList.remove('hidden');
     showToast(`Spotify rate limit reached. Wait ${waitSeconds} seconds before scanning again.`);
@@ -960,10 +968,8 @@ async function initialize() {
       await reconcileInterruptedOperations(profile.id);
       if (rateLimitActive()) startRateLimitCountdown(Math.ceil((storedRateLimitUntil() - Date.now()) / 1000));
     } catch (error) {
-      disconnect();
-      await clearStoredSpotifyData().catch(() => {});
-      setAuthenticated(false);
-      showToast(error.message);
+      const cooldownSeconds = await handleScanFailure(error);
+      if (cooldownSeconds) startRateLimitCountdown(cooldownSeconds);
     }
   }
 }

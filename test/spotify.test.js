@@ -117,8 +117,19 @@ test('distinguishes development quota exhaustion from the rolling rate limit wit
   try {
     const client = new SpotifyClient(async () => 'token');
     await assert.rejects(
-      () => client.request('/read'),
-      (error) => error.status === 429 && error.code === 'QUOTA_EXCEEDED' && error.retryAfter === undefined,
+      () => client.request('/playlists/privatePlaylist123/items?limit=50'),
+      (error) => {
+        assert.equal(error.status, 429);
+        assert.equal(error.code, 'QUOTA_EXCEEDED');
+        assert.equal(error.retryAfter, undefined);
+        assert.equal(error.diagnostic.request, 'GET /playlists/{playlist}/items');
+        assert.equal(error.diagnostic.status, 429);
+        assert.equal(error.diagnostic.reason, 'QUOTA_EXCEEDED');
+        assert.match(error.diagnostic.receivedAt, /^\d{4}-\d{2}-\d{2}T/);
+        assert.equal(JSON.stringify(error.diagnostic).includes('privatePlaylist123'), false);
+        assert.equal(JSON.stringify(error.diagnostic).includes('token'), false);
+        return true;
+      },
     );
     assert.equal(calls, 1);
   } finally {
