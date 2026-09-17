@@ -37,7 +37,6 @@ On balance, publishing this repository's source is reasonable if the remaining r
 ## Remaining release requirements
 
 - Rename the registered app in the Spotify Developer Dashboard to **Canonicalizer** and verify its icon is not Spotify-like.
-- Add the final public repository issue URL to the privacy policy's contact language after the repository exists.
 - Recheck the current Developer Terms, Developer Policy, Design & Branding Guidelines, and Web API documentation immediately before release; Spotify may change them.
 - Perform the documented live test using only a disposable playlist and the intended developer account.
 - Before offering access to other users, confirm that the app's Spotify dashboard mode, user allowlist, quota status, and distribution comply with Spotify's then-current requirements.

@@ -45,7 +45,7 @@ Connecting again may allow you to choose a different Spotify account. Canonicali
 
 ## Security
 
-Canonicalizer uses Spotify's Authorization Code flow with PKCE and does not use or embed a Spotify client secret. Tokens are not logged, exported, displayed, or sent to the local server. No software can guarantee absolute security; use the project issue tracker to report a suspected privacy or security problem without including tokens or private account data.
+Canonicalizer uses Spotify's Authorization Code flow with PKCE and does not use or embed a Spotify client secret. Tokens are not logged, exported, displayed, or sent to the local server. No software can guarantee absolute security; use the [project issue tracker](https://github.com/FallenG101/playlist-canonicalizer/issues) to report a suspected privacy or security problem without including tokens or private account data.
 
 ## Changes
 

@@ -26,7 +26,7 @@ Read [PRIVACY.md](PRIVACY.md) before connecting an account.
 
 ## Run it
 
-On this Mac, double-click `start.command`, or run:
+On macOS, double-click `start.command`, or run:
 
 ```sh
 ./start.command
