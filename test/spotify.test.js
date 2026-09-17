@@ -205,6 +205,48 @@ test('stops a playlist inventory immediately after a global rate limit', async (
   assert.deepEqual(calls, ['first']);
 });
 
+test('reads items only for playlists explicitly selected from eligible candidates', async () => {
+  const client = new SpotifyClient(async () => 'token');
+  client.profile = async () => ({ id: 'account' });
+  client.playlists = async () => [
+    { id: 'first', name: 'First', owner: { id: 'account' } },
+    { id: 'second', name: 'Second', collaborative: true, owner: { id: 'another-account' } },
+    { id: 'not-eligible', name: 'Not eligible', owner: { id: 'another-account' } },
+  ];
+  const calls = [];
+  client.playlistItems = async (playlistId) => {
+    calls.push(playlistId);
+    return [];
+  };
+
+  const source = await client.scanCandidates();
+  const inventory = await client.inventoryOwnedPlaylists(() => {}, source, ['second']);
+
+  assert.deepEqual(source.playlists.map((playlist) => playlist.id), ['first', 'second']);
+  assert.deepEqual(inventory.playlists.map((playlist) => playlist.id), ['second']);
+  assert.deepEqual(calls, ['second']);
+});
+
+test('blocks an empty or stale playlist selection before reading any items', async () => {
+  const client = new SpotifyClient(async () => 'token');
+  const source = {
+    profile: { id: 'account' },
+    playlists: [{ id: 'eligible', name: 'Eligible', owner: { id: 'account' } }],
+  };
+  let itemReads = 0;
+  client.playlistItems = async () => { itemReads += 1; return []; };
+
+  await assert.rejects(
+    () => client.inventoryOwnedPlaylists(() => {}, source, []),
+    /Select at least one playlist/,
+  );
+  await assert.rejects(
+    () => client.inventoryOwnedPlaylists(() => {}, source, ['deleted-or-unavailable']),
+    /selection changed or is invalid/,
+  );
+  assert.equal(itemReads, 0);
+});
+
 test('resumes unchanged playlists from saved progress and refetches changed snapshots', async () => {
   const records = new Map();
   const scanCache = {

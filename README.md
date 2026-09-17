@@ -1,6 +1,6 @@
 # Canonicalizer
 
-A local playlist canonicalizer for Spotify. It inventories tracks across playlists you own or collaborate on, groups likely alternate album releases, scores a proposed canonical edition, and applies only the replacements you individually approve.
+A local playlist canonicalizer for Spotify. You choose which playlists you own or collaborate on to inventory; it then groups likely alternate album releases, scores a proposed canonical edition, and applies only the replacements you individually approve.
 
 This is an independent project and is not affiliated with, endorsed by, or sponsored by Spotify. Spotify is a trademark of Spotify AB.
 
@@ -50,7 +50,7 @@ Spotify Development Mode may require adding the Spotify account being tested to 
 
 ## Matching behavior in this MVP
 
-The scanner reads every accessible playlist item from playlists where the current account is the owner or a collaborator. It ignores followed playlists, local files, and non-track items for matching. Episodes are preserved unchanged when a playlist is eligible for Apply; unavailable or unsupported items block Apply.
+The scanner first lists accessible playlists where the current account is the owner or a collaborator. It reads items only after you select one or more of those playlists. It ignores followed playlists, local files, and non-track items for matching. Episodes are preserved unchanged when a playlist is eligible for Apply; unavailable or unsupported items block Apply.
 
 Album families use the primary artist plus a normalized album title. Edition suffixes such as “Taylor's Version,” “Deluxe,” “Expanded,” “Forever,” “Anniversary,” and “Remastered” are removed only for family grouping. The canonical scorer then considers:
 

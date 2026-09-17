@@ -129,13 +129,31 @@ export class SpotifyClient {
     });
   }
 
-  async inventoryOwnedPlaylists(onProgress = () => {}) {
+  async scanCandidates(onProgress = () => {}) {
     const profile = await this.profile();
     onProgress({ phase: 'playlists', detail: 'Finding playlists you own or collaborate on…', percent: 6 });
     const visiblePlaylists = await this.playlists();
     const playlists = visiblePlaylists.filter(
       (playlist) => playlist?.owner?.id === profile.id || playlist?.collaborative === true,
     );
+    return { profile, playlists };
+  }
+
+  async inventoryOwnedPlaylists(onProgress = () => {}, source = null, selectedPlaylistIds = null) {
+    const candidateSource = source || await this.scanCandidates(onProgress);
+    const profile = candidateSource?.profile;
+    const candidates = Array.isArray(candidateSource?.playlists) ? candidateSource.playlists : [];
+    if (!profile?.id) throw new Error('Spotify returned an invalid account profile.');
+
+    const candidateIds = new Set(candidates.map((playlist) => playlist?.id).filter(Boolean));
+    const selectedIds = selectedPlaylistIds === null
+      ? candidateIds
+      : new Set(Array.isArray(selectedPlaylistIds) ? selectedPlaylistIds : []);
+    if (!selectedIds.size) throw new Error('Select at least one playlist to scan.');
+    if ([...selectedIds].some((playlistId) => !candidateIds.has(playlistId))) {
+      throw new Error('The playlist selection changed or is invalid. Choose playlists again before scanning.');
+    }
+    const playlists = candidates.filter((playlist) => selectedIds.has(playlist.id));
 
     const placements = [];
     const failures = [];

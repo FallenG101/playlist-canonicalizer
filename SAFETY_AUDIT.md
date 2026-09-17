@@ -4,7 +4,7 @@ Date: 2026-09-17
 
 ## Outcome
 
-The application received a full source review, targeted safety fixes, automated regression tests, static syntax checks, server negative tests, and a browser smoke test. All 34 automated tests pass. Every JavaScript file passes `node --check`. The local server serves the current application successfully with restrictive security headers, and the browser console is clean.
+The application received a full source review, targeted safety fixes, automated regression tests, static syntax checks, server negative tests, and a browser smoke test. All 36 automated tests pass. Every JavaScript file passes `node --check`. The local server serves the current application successfully with restrictive security headers, and the browser console is clean.
 
 The app has one Spotify mutation capability: replacing the items of one explicitly selected playlist with one `PUT /v1/playlists/{id}/items` request. No code exists for deleting playlists, changing follows, modifying the library, controlling playback, changing profiles, uploading playlist images, or reordering playlists.
 
@@ -18,6 +18,7 @@ The app is fail-safe for known stale-state, retry, duplicate-click, interrupted-
 - Added a persistent in-flight operation marker. After a crash, reload, or ambiguous network failure, the app compares Spotify with both the original and target sequence. Any third state blocks all further writes.
 - Prevented mutation retries. Rate-limited reads may retry up to three times while respecting `Retry-After`; writes are never automatically retried.
 - A rate limit, authorization failure, server failure, timeout, or network loss now stops the complete inventory scan instead of cascading requests through the remaining playlists.
+- Changed scanning from an automatic read of every eligible playlist to a two-step flow: first load playlist names, then read items only from playlists explicitly checked by the user. Empty, stale, or ineligible selections are blocked before any item request.
 - Completed playlists are cached without credentials against their Spotify snapshot so interrupted scans resume without rereading unchanged playlists.
 - Added 30-second API timeouts and explicit ambiguous-write classification.
 - Added account, playlist ID, owner, snapshot, source-position, source-track ID, replacement-track ID, and replacement-URI validation immediately before writing.

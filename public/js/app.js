@@ -38,6 +38,11 @@ const playlistList = $('#playlist-list');
 const proposalReviewList = $('#proposal-review-list');
 const emptyState = $('#empty-state');
 const toast = $('#toast');
+const playlistPickerDialog = $('#playlist-picker-dialog');
+const playlistPickerList = $('#playlist-picker-list');
+const playlistPickerSummary = $('#playlist-picker-summary');
+const playlistPickerError = $('#playlist-picker-error');
+const startSelectedScanButton = $('#start-selected-scan-button');
 
 const scanCache = new PlaylistScanCache();
 const spotify = new SpotifyClient(accessToken, { scanCache });
@@ -56,6 +61,8 @@ let unresolvedOperation = null;
 let applyInProgress = false;
 let toastTimer = null;
 let rateLimitTimer = null;
+let playlistPickerOpen = false;
+let pendingScanSource = null;
 
 function storedRateLimitUntil() {
   const value = Number(sessionStorage.getItem(RATE_LIMIT_UNTIL_KEY) || 0);
@@ -106,9 +113,9 @@ function setAuthenticated(authenticated) {
 }
 
 function setBusy(busy) {
-  scanButton.disabled = busy || rateLimitActive();
-  rescanButton.disabled = busy || rateLimitActive();
-  disconnectButton.disabled = busy;
+  scanButton.disabled = busy || rateLimitActive() || playlistPickerOpen;
+  rescanButton.disabled = busy || rateLimitActive() || playlistPickerOpen;
+  disconnectButton.disabled = busy || playlistPickerOpen;
   if (busy) {
     statusPanel.classList.remove('hidden');
     resultsView.classList.add('hidden');
@@ -706,16 +713,119 @@ function exportableScan(scan) {
   };
 }
 
-async function scan() {
-  if (applyInProgress || rateLimitActive()) {
+function playlistPickerLabel(playlist) {
+  const owner = playlist.owner?.display_name || playlist.owner?.id || 'Unknown owner';
+  return `${playlist.name || 'Untitled playlist'} · ${playlist.collaborative ? 'Collaborative' : `Owned by ${owner}`} · ${formatNumber(playlist.tracks?.total)} tracks`;
+}
+
+function selectedPlaylistIds() {
+  return [...playlistPickerList.querySelectorAll('input[type="checkbox"]:checked')].map((input) => input.value);
+}
+
+function updatePlaylistPickerControls() {
+  const count = selectedPlaylistIds().length;
+  startSelectedScanButton.disabled = count === 0;
+  startSelectedScanButton.textContent = count === 1 ? 'Scan 1 selected playlist' : `Scan ${count} selected playlists`;
+  playlistPickerSummary.textContent = count
+    ? `${count} playlist${count === 1 ? '' : 's'} selected. Only these playlists’ items will be read.`
+    : 'Choose at least one playlist. Playlist items are not read until you continue.';
+}
+
+function renderPlaylistPicker(source) {
+  const previouslyScannedIds = new Set(currentScan?.inventory?.playlists?.map((playlist) => playlist.id) || []);
+  const playlists = [...source.playlists].sort((a, b) =>
+    (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }),
+  );
+  const nodes = playlists.map((playlist) => {
+    const input = element('input', { type: 'checkbox' });
+    input.value = playlist.id;
+    input.checked = previouslyScannedIds.has(playlist.id);
+    input.addEventListener('change', updatePlaylistPickerControls);
+    return element('label', { className: 'playlist-picker-option' }, [
+      input,
+      element('span', { text: playlistPickerLabel(playlist), title: playlistPickerLabel(playlist) }),
+    ]);
+  });
+  playlistPickerList.replaceChildren(...nodes);
+  playlistPickerError.classList.add('hidden');
+  updatePlaylistPickerControls();
+}
+
+async function handleScanFailure(error) {
+  if (error.code === 'QUOTA_EXCEEDED') {
+    sessionStorage.removeItem(RATE_LIMIT_UNTIL_KEY);
+    $('#status-title').textContent = 'Spotify development quota exhausted';
+    $('#status-detail').textContent = 'Spotify’s Development Mode quota is unavailable. Spotify does not publish the reset time, so repeated retries will not help. Try again later.';
+    $('#progress-bar').style.width = '100%';
+    statusPanel.classList.remove('hidden');
+    showToast('Spotify Development Mode quota exhausted. Repeated retries will not help.');
+    return 0;
+  }
+  if (error.status === 429) {
+    const waitSeconds = Math.max(1, Math.ceil(error.retryAfter || 1));
+    $('#status-title').textContent = 'Spotify paused the scan';
+    $('#status-detail').textContent = `Spotify asked the app to wait ${waitSeconds} second${waitSeconds === 1 ? '' : 's'}. No more requests were sent. Wait, then select playlists again.`;
+    $('#progress-bar').style.width = '100%';
+    statusPanel.classList.remove('hidden');
+    showToast(`Spotify rate limit reached. Wait ${waitSeconds} seconds before scanning again.`);
+    return waitSeconds;
+  }
+  if (error.status === 401) {
+    disconnect();
+    await clearStoredSpotifyData().catch(() => {});
+    currentScan = null;
+    reviewItems = [];
+    reviewDecisions = new Map();
+    resultsView.classList.add('hidden');
+    setAuthenticated(false);
+    statusPanel.classList.add('hidden');
+    showToast('Your Spotify authorization is no longer valid. Local account data was cleared; reconnect to continue.');
+    return 0;
+  }
+  statusPanel.classList.add('hidden');
+  showToast(error.message);
+  return 0;
+}
+
+async function openPlaylistPicker() {
+  if (applyInProgress || rateLimitActive() || playlistPickerOpen) {
     if (rateLimitActive()) startRateLimitCountdown(Math.ceil((storedRateLimitUntil() - Date.now()) / 1000));
     return;
   }
+  setBusy(true);
+  updateProgress({ detail: 'Loading playlist names only…', percent: 2 });
+  try {
+    const source = await spotify.scanCandidates(updateProgress);
+    if (!source.playlists.length) throw new Error('No playlists you own or collaborate on are available to scan.');
+    pendingScanSource = source;
+    renderPlaylistPicker(source);
+    playlistPickerOpen = true;
+    setBusy(false);
+    statusPanel.classList.add('hidden');
+    playlistPickerDialog.showModal();
+  } catch (error) {
+    const cooldownSeconds = await handleScanFailure(error);
+    if (cooldownSeconds) startRateLimitCountdown(cooldownSeconds);
+  } finally {
+    if (!playlistPickerOpen) setBusy(false);
+  }
+}
+
+async function scanSelectedPlaylists() {
+  if (!pendingScanSource || applyInProgress) return;
+  const source = pendingScanSource;
+  const playlistIds = selectedPlaylistIds();
+  if (!playlistIds.length) {
+    playlistPickerError.textContent = 'Choose at least one playlist before scanning.';
+    playlistPickerError.classList.remove('hidden');
+    return;
+  }
+  playlistPickerDialog.close();
   let cooldownSeconds = 0;
   setBusy(true);
-  updateProgress({ detail: 'Starting a read-only Spotify scan…', percent: 2 });
+  updateProgress({ detail: `Starting a read-only scan of ${playlistIds.length} selected playlist${playlistIds.length === 1 ? '' : 's'}…`, percent: 8 });
   try {
-    const inventory = await spotify.inventoryOwnedPlaylists(updateProgress);
+    const inventory = await spotify.inventoryOwnedPlaylists(updateProgress, source, playlistIds);
     const analysis = analyzeInventory(inventory.placements);
     currentScan = { inventory, analysis, createdAt: new Date().toISOString() };
     $('#display-name').textContent = inventory.profile.display_name || inventory.profile.id || 'listener';
@@ -728,36 +838,9 @@ async function scan() {
       showToast('Read-only scan complete. Nothing was changed.');
     }
   } catch (error) {
-    if (error.code === 'QUOTA_EXCEEDED') {
-      sessionStorage.removeItem(RATE_LIMIT_UNTIL_KEY);
-      $('#status-title').textContent = 'Spotify development quota exhausted';
-      $('#status-detail').textContent = 'This is not a short cooldown. Spotify does not publish the reset time, so repeated retries will not help. Other Development Mode apps under the same developer account share this quota. Stop those apps and try again later.';
-      $('#progress-bar').style.width = '100%';
-      statusPanel.classList.remove('hidden');
-      showToast('Spotify Development Mode quota exhausted. Repeated retries will not help.');
-    } else if (error.status === 429) {
-      const waitSeconds = Math.max(1, Math.ceil(error.retryAfter || 1));
-      cooldownSeconds = waitSeconds;
-      $('#status-title').textContent = 'Spotify paused the scan';
-      $('#status-detail').textContent = `Spotify asked the app to wait ${waitSeconds} second${waitSeconds === 1 ? '' : 's'}. No more requests were sent. Wait, then select Scan again.`;
-      $('#progress-bar').style.width = '100%';
-      statusPanel.classList.remove('hidden');
-      showToast(`Spotify rate limit reached. Wait ${waitSeconds} seconds before scanning again.`);
-    } else if (error.status === 401) {
-      disconnect();
-      await clearStoredSpotifyData().catch(() => {});
-      currentScan = null;
-      reviewItems = [];
-      reviewDecisions = new Map();
-      resultsView.classList.add('hidden');
-      setAuthenticated(false);
-      statusPanel.classList.add('hidden');
-      showToast('Your Spotify authorization is no longer valid. Local account data was cleared; reconnect to continue.');
-    } else {
-      statusPanel.classList.add('hidden');
-      showToast(error.message);
-    }
+    cooldownSeconds = await handleScanFailure(error);
   } finally {
+    pendingScanSource = null;
     setBusy(false);
     if (cooldownSeconds) startRateLimitCountdown(cooldownSeconds);
   }
@@ -834,8 +917,14 @@ document.querySelectorAll('#status-filters button').forEach((button) => {
   });
 });
 
-scanButton.addEventListener('click', scan);
-rescanButton.addEventListener('click', scan);
+scanButton.addEventListener('click', openPlaylistPicker);
+rescanButton.addEventListener('click', openPlaylistPicker);
+startSelectedScanButton.addEventListener('click', scanSelectedPlaylists);
+playlistPickerDialog.addEventListener('close', () => {
+  playlistPickerOpen = false;
+  pendingScanSource = null;
+  setBusy(false);
+});
 $('#confirm-apply-button').addEventListener('click', confirmPlaylistApply);
 $('#apply-dialog').addEventListener('close', () => {
   if (!applyInProgress) pendingApplyPlan = null;

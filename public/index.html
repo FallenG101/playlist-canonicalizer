@@ -91,7 +91,7 @@
             <h1>Good evening, <span id="display-name">listener</span>.</h1>
             <p>Let’s find the releases that deserve one definitive place in your playlists.</p>
           </div>
-          <button id="scan-button" class="primary-button compact" type="button">Scan my playlists <span>→</span></button>
+          <button id="scan-button" class="primary-button compact" type="button">Choose playlists to scan <span>→</span></button>
         </div>
 
         <div id="status-panel" class="status-panel hidden" aria-live="polite">
@@ -105,7 +105,7 @@
         <div id="results-view" class="hidden">
           <div class="metrics" aria-label="Scan summary">
             <article><span>PLAYLISTS</span><strong id="metric-playlists">0</strong><small>owned or collaborative</small></article>
-            <article><span>TRACK PLACEMENTS</span><strong id="metric-tracks">0</strong><small>across every playlist</small></article>
+            <article><span>TRACK PLACEMENTS</span><strong id="metric-tracks">0</strong><small>across selected playlists</small></article>
             <article><span>UNIQUE ALBUMS</span><strong id="metric-albums">0</strong><small>Spotify album IDs</small></article>
             <article class="accent"><span>PROPOSALS</span><strong id="metric-proposals">0</strong><small>require approval</small></article>
           </div>
@@ -127,7 +127,7 @@
                 <button type="button" data-mode="album">By album</button>
               </div>
               <button id="export-button" class="secondary-button" type="button">Export scan</button>
-              <button id="rescan-button" class="secondary-button" type="button">Scan again</button>
+              <button id="rescan-button" class="secondary-button" type="button">Choose playlists to scan</button>
             </div>
           </div>
 
@@ -221,6 +221,21 @@
         <div class="dialog-actions">
           <button id="dialog-cancel" class="secondary-button" value="cancel">Cancel</button>
           <button id="confirm-apply-button" class="apply-button" value="none" type="button">Confirm and apply to this playlist</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="playlist-picker-dialog" class="playlist-picker-dialog">
+      <form method="dialog" class="playlist-picker-card">
+        <button class="dialog-close" value="cancel" aria-label="Close playlist selection">×</button>
+        <p class="eyebrow">Read-only scan</p>
+        <h2>Choose playlists to scan</h2>
+        <p>Only the selected playlists’ items will be read. This never changes Spotify.</p>
+        <div id="playlist-picker-list" class="playlist-picker-list" aria-label="Available playlists"></div>
+        <p id="playlist-picker-summary" class="playlist-picker-summary" aria-live="polite"></p>
+        <p id="playlist-picker-error" class="apply-dialog-error hidden" role="alert"></p>
+        <div class="dialog-actions">
+          <button class="secondary-button" value="cancel">Cancel</button>
+          <button id="start-selected-scan-button" class="primary-button" type="button" disabled>Scan selected playlists</button>
         </div>
       </form>
     </dialog>
