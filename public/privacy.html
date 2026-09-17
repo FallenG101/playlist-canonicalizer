@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#101310" />
+    <title>Privacy · Canonicalizer</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="policy-page">
+      <a class="policy-back" href="./">← Back to Canonicalizer</a>
+      <p class="eyebrow">Local by design</p>
+      <h1>Privacy policy</h1>
+      <p class="policy-updated">Last updated: September 17, 2026</p>
+      <p>Canonicalizer is an independent local tool for reviewing and changing playlists on Spotify. It has no hosted backend, analytics, advertising, telemetry, or crash-reporting service.</p>
+
+      <h2>Information the app accesses</h2>
+      <p>After you authorize it, Canonicalizer accesses your Spotify user ID and display name; playlists you own or collaborate on; playlist items; and associated track, artist, album, artwork, availability, and Spotify-link metadata. It does not request your email address, date of birth, followers, saved library, playback state, devices, listening history, or payment information.</p>
+
+      <h2>How information is used</h2>
+      <p>The data is used only to inventory eligible playlists, identify possible alternate album releases, display proposals for your review, preserve playlist order, create local safety backups, and apply only the playlist changes you explicitly approve and confirm.</p>
+
+      <h2>Storage and retention</h2>
+      <ul>
+        <li>OAuth access and refresh tokens are kept in browser session storage and disappear when the browser session ends or you disconnect.</li>
+        <li>Your public Spotify developer Client ID is kept in browser local storage so it does not need to be re-entered.</li>
+        <li>Review decisions, pre-change backups, and interrupted-operation safety records are kept locally in your browser.</li>
+        <li>Resumable scan metadata is stored on your device for no more than 24 hours.</li>
+        <li>Files you intentionally download remain under your control and must be deleted separately.</li>
+      </ul>
+      <p>No Spotify data is sent to the local web server. Your browser communicates directly with Spotify's account and Web API services.</p>
+
+      <h2>Sharing, cookies, and third parties</h2>
+      <p>Canonicalizer does not sell, rent, share, or transmit your Spotify data to the project developer or other third parties. It does not set cookies or permit third parties to set cookies in the app. Spotify receives the authorization and API requests required to provide its service, and Spotify's authorization page is governed by Spotify's privacy practices.</p>
+
+      <h2>Your choices and deletion</h2>
+      <p>Select <strong>Disconnect</strong> to remove OAuth tokens, locally stored Spotify account data, review decisions, backups, interrupted-operation records, and scan cache. You can also clear site data for <code>127.0.0.1:4387</code> in your browser. Delete downloaded scan exports or backup files separately using your operating system.</p>
+
+      <h2>Security and contact</h2>
+      <p>Canonicalizer uses Spotify's Authorization Code flow with PKCE and does not use or embed a client secret. Tokens are not logged, exported, displayed, or sent to the local server. Report a suspected privacy or security problem through the project's issue tracker without including tokens or private account data.</p>
+
+      <h2>Changes and affiliation</h2>
+      <p>Material changes will be reflected by changing the date above. Canonicalizer is not affiliated with, endorsed by, or sponsored by Spotify. Spotify is a trademark of Spotify AB.</p>
+    </main>
+  </body>
+</html>

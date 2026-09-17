@@ -1,0 +1,19 @@
+.DS_Store
+.env
+.env.*
+!.env.example
+node_modules/
+npm-debug.log*
+
+# User-specific Spotify exports and recovery data must never be committed.
+spotify-backup-*.json
+spotify-canonicalizer-scan-*.json
+canonicalizer-scan-*.json
+backups/
+exports/
+
+# Editor and local tooling state.
+.idea/
+.vscode/
+*.swp
+*.swo

@@ -1,0 +1,15 @@
+{
+  "name": "playlist-canonicalizer",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "description": "A local, review-gated playlist canonicalizer for Spotify.",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test",
+    "check": "node --check server.mjs && node --check public/js/app.js && node --check public/js/apply.js && node --check public/js/auth.js && node --check public/js/canonicalizer.js && node --check public/js/review.js && node --check public/js/scan-cache.js && node --check public/js/spotify.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

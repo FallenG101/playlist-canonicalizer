@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#101310" />
+    <title>Canonicalizer</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div id="file-warning" class="file-warning hidden" role="alert">
+      <div class="file-warning-card">
+        <span class="file-warning-mark" aria-hidden="true">↗</span>
+        <p class="eyebrow">One quick fix</p>
+        <h1>Open the running app,<br /><em>not the HTML file.</em></h1>
+        <p>Spotify sign-in needs the local server address. Your app files are fine—this page was simply opened directly from Finder.</p>
+        <a class="primary-button" href="http://127.0.0.1:4387/">Open Canonicalizer <span>→</span></a>
+        <small>If that link is unavailable, double-click <strong>start.command</strong> in the Canonicalizer folder first.</small>
+      </div>
+    </div>
+    <div class="ambient ambient-one"></div>
+    <div class="ambient ambient-two"></div>
+
+    <header class="site-header shell">
+      <a class="brand" href="/" aria-label="Canonicalizer home">
+        <span class="brand-mark" aria-hidden="true">C</span>
+        <span>Canonicalizer</span>
+      </a>
+      <div class="header-actions">
+        <span class="safety-pill"><span></span> Review-gated writes</span>
+        <button class="text-button hidden" id="disconnect-button" type="button">Disconnect</button>
+      </div>
+    </header>
+
+    <main class="shell">
+      <section id="welcome-view" class="welcome-grid">
+        <div class="hero-copy">
+          <p class="eyebrow">A cleaner music library starts here</p>
+          <h1>One album.<br /><em>The right version.</em></h1>
+          <p class="hero-description">
+            Find alternate releases, approve the exact replacements you want, and apply them one playlist at a time.
+          </p>
+
+          <div class="trust-row" aria-label="Safety guarantees">
+            <div><span class="trust-icon">✓</span><span><strong>No surprise writes</strong>Only individually approved tracks apply</span></div>
+            <div><span class="trust-icon">⌂</span><span><strong>Stays local</strong>Your scan remains in this browser</span></div>
+          </div>
+        </div>
+
+        <div class="connect-card">
+          <div class="connect-card-top">
+            <span class="mini-label">GET STARTED</span>
+            <span class="scope-badge">4 playlist scopes</span>
+          </div>
+          <h2>Connect your Spotify</h2>
+          <p>Paste the Client ID from your Spotify developer app. It is saved only in this browser.</p>
+
+          <form id="connect-form">
+            <label for="client-id">Spotify Client ID</label>
+            <div class="input-wrap">
+              <input id="client-id" name="clientId" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="e.g. a1b2c3d4…" required maxlength="200" aria-describedby="client-id-help" />
+              <span class="input-status" id="input-status">○</span>
+            </div>
+            <small id="client-id-help" class="client-id-help" aria-live="polite">Paste only the Client ID value—not the Client Secret.</small>
+            <button class="primary-button" type="submit">
+              Connect to Spotify <span aria-hidden="true">→</span>
+            </button>
+          </form>
+
+          <details>
+            <summary>First time? Set up your Spotify app</summary>
+            <ol>
+              <li>Open the <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noreferrer">Spotify Developer Dashboard</a> and create an app.</li>
+              <li>Add <code id="redirect-uri">http://127.0.0.1:4387/</code> as a Redirect URI.</li>
+              <li>Copy its Client ID and paste it above. No client secret is needed.</li>
+            </ol>
+          </details>
+
+          <div class="permission-note">
+            <span aria-hidden="true">◉</span>
+            <p><strong>Permission preview</strong><br />Read private and collaborative playlists; manage public and private playlists. No library, profile-email, or playback access. Review the <a href="./privacy.html" target="_blank" rel="noopener">privacy policy</a> before connecting.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="dashboard-view" class="dashboard hidden">
+        <div class="dashboard-heading">
+          <div>
+            <p class="eyebrow">Library audit</p>
+            <h1>Good evening, <span id="display-name">listener</span>.</h1>
+            <p>Let’s find the releases that deserve one definitive place in your playlists.</p>
+          </div>
+          <button id="scan-button" class="primary-button compact" type="button">Scan my playlists <span>→</span></button>
+        </div>
+
+        <div id="status-panel" class="status-panel hidden" aria-live="polite">
+          <div class="status-copy">
+            <span class="spinner" aria-hidden="true"></span>
+            <div><strong id="status-title">Reading your playlists…</strong><span id="status-detail">Nothing will be changed.</span></div>
+          </div>
+          <div class="progress-track"><span id="progress-bar"></span></div>
+        </div>
+
+        <div id="results-view" class="hidden">
+          <div class="metrics" aria-label="Scan summary">
+            <article><span>PLAYLISTS</span><strong id="metric-playlists">0</strong><small>owned or collaborative</small></article>
+            <article><span>TRACK PLACEMENTS</span><strong id="metric-tracks">0</strong><small>across every playlist</small></article>
+            <article><span>UNIQUE ALBUMS</span><strong id="metric-albums">0</strong><small>Spotify album IDs</small></article>
+            <article class="accent"><span>PROPOSALS</span><strong id="metric-proposals">0</strong><small>require approval</small></article>
+          </div>
+
+          <div id="recovery-banner" class="recovery-banner hidden" role="alert">
+            <span>!</span>
+            <p><strong>An earlier Apply has an unresolved outcome.</strong><br /><span id="recovery-message">Inspect the named playlist in Spotify and reload this app. Further writes are blocked.</span></p>
+          </div>
+
+          <div class="results-header">
+            <div>
+              <p class="eyebrow">Review queue</p>
+              <h2>Approve playlist by playlist</h2>
+              <p id="result-summary">Every proposed replacement waits for your decision.</p>
+            </div>
+            <div class="result-actions">
+              <div class="view-mode-toggle" id="view-mode-toggle" aria-label="Choose review grouping">
+                <button class="active" type="button" data-mode="playlist">By playlist</button>
+                <button type="button" data-mode="album">By album</button>
+              </div>
+              <button id="export-button" class="secondary-button" type="button">Export scan</button>
+              <button id="rescan-button" class="secondary-button" type="button">Scan again</button>
+            </div>
+          </div>
+
+          <div id="empty-state" class="empty-state hidden">
+            <span class="empty-glyph">✓</span>
+            <h3>No replacement decisions needed</h3>
+            <p>Your scanned playlists do not currently contain alternate album tracks with a matching canonical replacement.</p>
+          </div>
+
+          <div id="review-workspace" class="review-workspace hidden">
+            <aside class="playlist-sidebar">
+              <div class="queue-heading">
+                <div><span>PLAYLIST QUEUE</span><strong id="playlist-progress-label">0 of 0 reviewed</strong></div>
+                <div class="review-progress"><span id="review-progress-bar"></span></div>
+              </div>
+              <div id="playlist-list" class="playlist-list"></div>
+            </aside>
+
+            <section class="playlist-review" aria-live="polite">
+              <div class="playlist-review-header">
+                <div>
+                  <span class="review-kicker" id="review-kicker">CURRENT PLAYLIST</span>
+                  <div class="current-group-title"><h3 id="current-playlist-name">Playlist</h3><a id="current-group-spotify-link" class="hidden" target="_blank" rel="noopener noreferrer">OPEN SPOTIFY</a></div>
+                  <p id="current-playlist-summary">0 proposed replacements</p>
+                  <div class="playlist-review-progress" role="progressbar" aria-label="Current playlist review progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                    <span id="current-playlist-progress-bar"></span>
+                  </div>
+                  <small id="current-playlist-progress-label">0 of 0 reviewed · approvals are staged only</small>
+                </div>
+                <div class="decision-counts" id="decision-counts"></div>
+              </div>
+
+              <div class="review-toolbar">
+                <div class="status-filters" id="status-filters" aria-label="Filter review items">
+                  <button class="active" type="button" data-filter="all">All</button>
+                  <button type="button" data-filter="pending">Pending</button>
+                  <button type="button" data-filter="approved">Approved</button>
+                  <button type="button" data-filter="skipped">Skipped</button>
+                </div>
+                <span>Approval only stages a change; Spotify waits for final confirmation</span>
+              </div>
+
+              <div id="proposal-review-list" class="proposal-review-list"></div>
+              <div id="filter-empty" class="filter-empty hidden">No tracks match this filter.</div>
+
+              <div class="review-navigation">
+                <button id="previous-playlist" class="secondary-button" type="button">← Previous playlist</button>
+                <div class="review-navigation-actions">
+                  <button id="apply-playlist" class="apply-button hidden" type="button">Review &amp; confirm approved changes</button>
+                  <button id="next-playlist" class="primary-button compact" type="button">Next pending playlist <span>→</span></button>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <aside class="roadmap-card">
+            <div><span>SAFE BY DESIGN</span><h3>Review first. Apply precisely.</h3></div>
+            <p>Every Apply rechecks the playlist identity and snapshot, stores a backup, requests a download, then changes only individually approved tracks in that playlist.</p>
+            <div class="roadmap"><span class="done">01 Scan</span><span class="done">02 Match</span><span class="done">03 Review</span><span class="done">04 Backup</span><span class="current">05 Apply</span></div>
+          </aside>
+        </div>
+      </section>
+    </main>
+
+    <footer class="shell">
+      <span>Local tool · No analytics · No server storage</span>
+      <a class="spotify-attribution" href="https://open.spotify.com/" target="_blank" rel="noopener noreferrer" aria-label="Open Spotify"><img src="./assets/spotify-full-logo-white.svg" alt="Spotify" /></a>
+    </footer>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <dialog id="apply-dialog" class="apply-dialog">
+      <form method="dialog" class="apply-dialog-card">
+        <button id="dialog-close" class="dialog-close" value="cancel" aria-label="Close apply confirmation">×</button>
+        <p class="eyebrow">Final safety check</p>
+        <h2>Confirm this playlist?</h2>
+        <p id="apply-dialog-summary">A local backup is ready.</p>
+        <div class="apply-progress" aria-live="polite">
+          <div class="apply-progress-track" role="progressbar" aria-label="Playlist Apply progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+            <span id="apply-progress-bar"></span>
+          </div>
+          <span id="apply-progress-label">Waiting for confirmation — Spotify has not been changed.</span>
+        </div>
+        <div class="apply-checklist">
+          <div><span>✓</span><p><strong>Fresh snapshot verified</strong><br />The playlist has not changed since your scan.</p></div>
+          <div><span>✓</span><p><strong>Backup created first</strong><br /><span id="apply-backup-name">Backup file</span></p></div>
+          <div><span>✓</span><p><strong>One playlist, one request</strong><br />No other playlist will be touched. Playlists over 100 items are blocked.</p></div>
+        </div>
+        <p class="apply-concurrency-note">Do not edit this playlist in Spotify or another app until Apply finishes.</p>
+        <p id="apply-dialog-error" class="apply-dialog-error hidden"></p>
+        <div class="dialog-actions">
+          <button id="dialog-cancel" class="secondary-button" value="cancel">Cancel</button>
+          <button id="confirm-apply-button" class="apply-button" value="none" type="button">Confirm and apply to this playlist</button>
+        </div>
+      </form>
+    </dialog>
+    <script type="module" src="./js/app.js"></script>
+  </body>
+</html>
