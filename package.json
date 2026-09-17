@@ -1,6 +1,6 @@
 {
   "name": "playlist-canonicalizer",
-  "version": "0.3.0",
+  "version": "0.0.1",
   "private": true,
   "type": "module",
   "description": "A local, review-gated playlist canonicalizer for Spotify.",
