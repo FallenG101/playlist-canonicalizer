@@ -34,7 +34,7 @@ export function groupReviewItems(items, mode = 'playlist') {
   if (!['playlist', 'album'].includes(mode)) throw new Error(`Unknown review mode: ${mode}`);
   const groups = new Map();
   for (const item of items) {
-    const key = mode === 'playlist' ? item.playlist.id : item.familyKey;
+    const key = mode === 'playlist' ? item.playlist.id : item.canonicalAlbum.id;
     if (!groups.has(key)) {
       groups.set(key, {
         key,

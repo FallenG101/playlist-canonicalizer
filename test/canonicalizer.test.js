@@ -153,3 +153,92 @@ test('does not propose a replacement Spotify marks unplayable', () => {
   ]);
   assert.equal(result.proposalCount, 0);
 });
+
+test('finds a Sinatra remaster on an unrelated album in a selected playlist', () => {
+  const sinatra = { id: 'sinatra', name: 'Frank Sinatra' };
+  const originalAlbum = { ...album('original', 'Songs for Swingin Lovers'), artists: [sinatra] };
+  const remasterAlbum = { ...album('compilation', 'The Best of Frank Sinatra'), artists: [sinatra] };
+  const original = { ...track('original-track', 'Ive Got You Under My Skin', originalAlbum), artists: [sinatra] };
+  const remaster = {
+    ...track('remastered-track', 'Ive Got You Under My Skin (2018 Remaster)', remasterAlbum, false, 221_000),
+    artists: [sinatra],
+  };
+  const result = analyzeInventory([placement(original, 'Old songs'), placement(remaster, 'Remasters')]);
+  assert.equal(result.proposalCount, 1);
+  assert.equal(result.families[0].proposals[0].replacementTrack.id, 'remastered-track');
+  assert.equal(result.families[0].proposals[0].crossAlbumRemaster, true);
+  assert.match(result.families[0].reasons.join(' '), /listen/i);
+});
+
+test('detects an album-labeled remaster but never reverses a remaster into an original', () => {
+  const originalAlbum = album('original', 'First Release');
+  const remasterAlbum = album('remaster', 'Greatest Hits (Remastered)');
+  const result = analyzeInventory([
+    placement(track('old', 'Song', originalAlbum), 'Old'),
+    placement(track('new', 'Song', remasterAlbum, false, 221_000), 'New'),
+  ]);
+  assert.equal(result.proposalCount, 1);
+  assert.equal(result.families[0].proposals[0].sourceTrack.id, 'old');
+});
+
+test('does not confuse live versions, other artists, large duration gaps, or unavailable remasters', () => {
+  const sourceAlbum = album('source', 'Original');
+  const remasterAlbum = album('remaster', 'Unrelated Remastered');
+  const otherArtist = { id: 'other', name: artist.name };
+  const cases = [
+    track('live', 'Song (Live)', remasterAlbum),
+    { ...track('different-artist', 'Song', remasterAlbum), artists: [otherArtist] },
+    track('long', 'Song', remasterAlbum, false, 230_000),
+    { ...track('unavailable', 'Song', remasterAlbum), is_playable: false },
+  ];
+  for (const candidate of cases) {
+    const result = analyzeInventory([
+      placement(track('old', 'Song', sourceAlbum), 'Old'),
+      placement(candidate, 'New'),
+    ]);
+    assert.equal(result.proposalCount, 0, candidate.id);
+  }
+});
+
+test('cross-album remaster replaces an ordinary edition proposal without duplicating a playlist position', () => {
+  const originalAlbum = album('original', 'Record');
+  const deluxeAlbum = album('deluxe', 'Record (Deluxe)', '2024-01-01', 20);
+  const remasterAlbum = album('remaster', 'Other Collection (Remastered)', '2025-01-01');
+  const result = analyzeInventory([
+    placement(track('original-track', 'Song', originalAlbum), 'Old'),
+    placement(track('deluxe-track', 'Song', deluxeAlbum), 'Deluxe'),
+    placement(track('remaster-track', 'Song', remasterAlbum), 'Remaster'),
+  ]);
+  const proposals = result.families.flatMap((family) => family.proposals);
+  assert.equal(proposals.filter((item) => item.sourceTrack.id === 'original-track').length, 1);
+  assert.equal(proposals.find((item) => item.sourceTrack.id === 'original-track').replacementTrack.id, 'remaster-track');
+});
+
+test('cross-album remasters do not override a Taylor Version or manual album choice', () => {
+  const originalAlbum = album('original', 'Red');
+  const taylorsAlbum = album('taylors', "Red (Taylor's Version)", '2021-01-01', 30);
+  const remasterAlbum = album('remaster', 'Old Hits (Remastered)', '2025-01-01');
+  const placements = [
+    placement(track('old', 'Song', originalAlbum), 'Old'),
+    placement(track('tv', "Song (Taylor's Version)", taylorsAlbum), 'TV'),
+    placement(track('remaster', 'Song', remasterAlbum), 'Remaster'),
+  ];
+  const result = analyzeInventory(placements);
+  assert.equal(result.families.flatMap((family) => family.proposals)
+    .find((item) => item.sourceTrack.id === 'old').replacementTrack.id, 'tv');
+  const overridden = analyzeInventory(placements, {
+    manualAlbumOverrides: { [albumFamilyKey(originalAlbum)]: 'original' },
+  });
+  assert.equal(overridden.families.flatMap((family) => family.proposals)
+    .some((item) => item.sourceTrack.id === 'old'), false);
+});
+
+test('remaster preference does not downgrade an explicit track to clean', () => {
+  const originalAlbum = album('original', 'First Release');
+  const remasterAlbum = album('remaster', 'Other Album (Remastered)');
+  const result = analyzeInventory([
+    placement(track('explicit', 'Song', originalAlbum, true), 'Original'),
+    placement(track('clean', 'Song', remasterAlbum, false), 'Remaster'),
+  ]);
+  assert.equal(result.proposalCount, 0);
+});

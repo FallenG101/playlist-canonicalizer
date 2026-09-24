@@ -75,7 +75,7 @@ Album families use the primary artist plus a normalized album title. Edition suf
 - a title-specific preferred release year (the initial rule supports the 2025 *The Great American Bar Scene*)
 - manual album-ID overrides (supported by the engine; a settings UI is planned)
 
-A track proposal requires a matching normalized track title and artist on the chosen canonical album. Duration proximity and explicit preference break ties. The MVP can only propose a canonical track that appears somewhere in the scanned playlists; catalog-wide edition discovery is a later enhancement.
+A track proposal requires a matching normalized track title and artist on the chosen canonical album. Duration proximity and explicit preference break ties. A separate cross-album check also looks for explicitly labeled remasters by any artist among the selected playlists, even when album titles differ. It requires the same Spotify artist IDs, a song title that differs only by a remaster label, and durations within three seconds. These are lower-confidence suggestions and should be listened to before approval; matching metadata cannot prove two recordings are the same. Manual album overrides and Taylor's Version proposals take precedence, and an explicit track is not replaced by a clean remaster. The app does not search Spotify's catalog, so it cannot find a remaster absent from the selected playlists.
 
 The review queue can be switched between two views without losing decisions:
 

@@ -129,6 +129,68 @@ function bestTrackMatch(sourceTrack, canonicalTracksByIdentity, preferences) {
   })[0];
 }
 
+const REMASTER_PATTERN = /\bremaster(?:ed)?\b/i;
+
+function remasterEvidence(track) {
+  if (REMASTER_PATTERN.test(track?.name || '')) return 2;
+  return REMASTER_PATTERN.test(track?.album?.name || '') ? 1 : 0;
+}
+
+function remasterIdentity(track) {
+  if (!Array.isArray(track?.artists) || !track.artists.length ||
+      track.artists.some((artist) => !artist?.id)) return '';
+  let title = removeQualifiedBrackets(typeof track.name === 'string' ? track.name : '', REMASTER_PATTERN);
+  title = title.replace(/\s*[-–—:]\s*([^\n]+)$/g, (whole, suffix) =>
+    REMASTER_PATTERN.test(suffix) ? ' ' : whole,
+  );
+  const normalized = normalizeText(title);
+  return normalized ? `${normalized}::${track.artists.map((artist) => artist.id).join('|')}` : '';
+}
+
+function placementKey(placement) {
+  return `${placement.playlist?.id}::${placement.position}`;
+}
+
+function remasterCandidates(placements) {
+  const byIdentity = new Map();
+  for (const placement of placements) {
+    const track = placement?.track;
+    const identity = remasterIdentity(track);
+    if (!identity || !track?.id || !track.album?.id || !remasterEvidence(track) ||
+        track.is_playable === false || track.restrictions?.reason) continue;
+    if (!byIdentity.has(identity)) byIdentity.set(identity, new Map());
+    byIdentity.get(identity).set(track.id, track);
+  }
+  return byIdentity;
+}
+
+function bestCrossAlbumRemaster(source, candidates, preferences) {
+  const sourceTrack = source?.track;
+  if (!sourceTrack?.id || !sourceTrack.album?.id || remasterEvidence(sourceTrack) ||
+      !Number.isFinite(sourceTrack.duration_ms) || sourceTrack.duration_ms <= 0) return null;
+  if (preferences.manualAlbumOverrides[albumFamilyKey(sourceTrack.album)] === sourceTrack.album.id) return null;
+  // A re-recording preference must not be overturned by an older recording's remaster.
+  if (preferences.preferTaylorsVersion &&
+      /\btaylor'?s version\b/i.test(`${sourceTrack.name} ${sourceTrack.album.name}`)) return null;
+  const eligible = [...(candidates.get(remasterIdentity(sourceTrack))?.values() || [])].filter((candidate) =>
+    candidate.id !== sourceTrack.id && candidate.album.id !== sourceTrack.album.id &&
+    !(preferences.preferExplicit && sourceTrack.explicit && !candidate.explicit) &&
+    Number.isFinite(candidate.duration_ms) && candidate.duration_ms > 0 &&
+    Math.abs(candidate.duration_ms - sourceTrack.duration_ms) <= 3000,
+  );
+  if (!eligible.length) return null;
+  const sourceIsrc = sourceTrack.external_ids?.isrc;
+  const isrcMatch = (candidate) => Number(Boolean(sourceIsrc && candidate.external_ids?.isrc === sourceIsrc));
+  eligible.sort((a, b) =>
+    remasterEvidence(b) - remasterEvidence(a) ||
+    isrcMatch(b) - isrcMatch(a) ||
+    (preferences.preferExplicit ? Number(b.explicit) - Number(a.explicit) : 0) ||
+    Math.abs(a.duration_ms - sourceTrack.duration_ms) - Math.abs(b.duration_ms - sourceTrack.duration_ms) ||
+    releaseYear(b.album) - releaseYear(a.album) || a.id.localeCompare(b.id),
+  );
+  return eligible[0];
+}
+
 function uniqueById(items) {
   return [...new Map(items.filter(Boolean).map((item) => [item.id, item])).values()];
 }
@@ -182,6 +244,7 @@ export function analyzeInventory(placements, suppliedPreferences = {}) {
   }
 
   const families = [];
+  const existingProposals = new Map();
   for (const [familyKey, candidates] of grouped) {
     if (candidates.length < 2) continue;
     const ranked = [...candidates]
@@ -210,6 +273,7 @@ export function analyzeInventory(placements, suppliedPreferences = {}) {
           sourceAlbum: source.album,
           canonicalAlbum: canonical.album,
         });
+        existingProposals.set(placementKey(placement), { familyKey, proposal: proposals.at(-1) });
       }
     }
 
@@ -223,6 +287,54 @@ export function analyzeInventory(placements, suppliedPreferences = {}) {
       proposals,
       reasons: canonicalReasons(canonical, alternatives, familyKey, preferences),
       confidence: confidenceFor(ranked, canonical, proposals),
+    });
+  }
+
+  const remasters = remasterCandidates(placements);
+  const remasterGroups = new Map();
+  for (const placement of placements) {
+    const replacement = bestCrossAlbumRemaster(placement, remasters, preferences);
+    if (!replacement) continue;
+    const key = placementKey(placement);
+    const existing = existingProposals.get(key);
+    if (existing) {
+      const currentFamily = families.find((family) => family.key === existing.familyKey);
+      if (!currentFamily?.proposals.includes(existing.proposal)) continue;
+      if (preferences.manualAlbumOverrides[existing.familyKey] ||
+          (preferences.preferTaylorsVersion &&
+            /\btaylor'?s version\b/i.test(`${existing.proposal.replacementTrack.name} ${existing.proposal.canonicalAlbum.name}`))) continue;
+      currentFamily.proposals.splice(currentFamily.proposals.indexOf(existing.proposal), 1);
+    }
+    const groupKey = `remaster::${replacement.album.id}`;
+    if (!remasterGroups.has(groupKey)) remasterGroups.set(groupKey, []);
+    remasterGroups.get(groupKey).push({
+      playlist: placement.playlist,
+      position: placement.position,
+      sourceTrack: placement.track,
+      replacementTrack: replacement,
+      sourceAlbum: placement.track.album,
+      canonicalAlbum: replacement.album,
+      crossAlbumRemaster: true,
+    });
+  }
+  for (const family of families) {
+    family.confidence = confidenceFor(family.albums, family.canonical, family.proposals);
+  }
+  for (const [key, proposals] of remasterGroups) {
+    const canonical = albumMap.get(proposals[0].canonicalAlbum.id);
+    if (!canonical) continue;
+    const alternatives = uniqueById(proposals.map((proposal) => proposal.sourceAlbum))
+      .map((album) => albumMap.get(album.id)).filter(Boolean);
+    families.push({
+      key,
+      artist: canonical.album.artists?.[0]?.name || 'Unknown artist',
+      baseTitle: baseAlbumName(canonical.album.name),
+      albums: [canonical, ...alternatives],
+      canonical,
+      alternatives,
+      proposals,
+      reasons: ['Cross-album remaster candidate; listen before approving'],
+      confidence: 65,
     });
   }
 

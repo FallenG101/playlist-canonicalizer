@@ -51,6 +51,19 @@ test('groups one shared review set by playlist or album', () => {
   assert.equal(albums[0].items.length, 3);
 });
 
+test('merges album-family and cross-album remaster proposals targeting the same album', () => {
+  const sharedTarget = proposal('p3', 'Third Playlist', 1, 'd', 'dd');
+  const items = flattenReviewItems({
+    families: [
+      analysis.families[0],
+      { key: 'remaster::new-album', artist: 'Artist', confidence: 65, reasons: ['Remaster'], proposals: [sharedTarget] },
+    ],
+  });
+  const albums = groupReviewItems(items, 'album');
+  assert.equal(albums.length, 1);
+  assert.equal(albums[0].items.length, 4);
+});
+
 test('counts pending, approved, and skipped decisions', () => {
   const items = flattenReviewItems(analysis);
   const decisions = new Map([

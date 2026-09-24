@@ -554,6 +554,9 @@ function reviewItemCard(item) {
         spotifyAlbumLink(item.canonicalAlbum),
       ]),
     ]),
+    ...(item.crossAlbumRemaster ? [element('small', {
+      text: 'Remaster found on a different album. Listen to both recordings before approving.',
+    })] : []),
   ]);
   const actions = element('div', { className: 'decision-actions' }, [
     decisionButton('✓ Approve', 'approved', item),
@@ -710,7 +713,7 @@ function renderResults(inventory, analysis) {
   emptyState.classList.toggle('hidden', reviewItems.length !== 0);
   reviewWorkspace.classList.toggle('hidden', reviewItems.length === 0);
   if (reviewItems.length) renderReview();
-  else $('#result-summary').textContent = `${analysis.families.length} likely album families were found, but none had a matching replacement track in the scanned playlists.`;
+  else $('#result-summary').textContent = 'No matching replacement tracks were found in the selected playlists.';
   statusPanel.classList.add('hidden');
   resultsView.classList.remove('hidden');
 }
@@ -748,6 +751,7 @@ function exportableScan(scan) {
       reasons: family.reasons,
       proposals: family.proposals.map((proposal) => ({
         id: proposalId(proposal),
+        crossAlbumRemaster: proposal.crossAlbumRemaster === true,
         decision: decisionFor(reviewDecisions, proposalId(proposal)),
         playlistId: proposal.playlist.id,
         playlistName: proposal.playlist.name,
