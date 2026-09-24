@@ -1,6 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { SpotifyClient } from '../public/js/spotify.js';
+import { playlistItemCount, SpotifyClient } from '../public/js/spotify.js';
+
+test('playlist picker counts current items and does not invent zero for missing metadata', () => {
+  assert.equal(playlistItemCount({ items: { total: 17 }, tracks: { total: 9 } }), 17);
+  assert.equal(playlistItemCount({ tracks: { total: 9 } }), 9);
+  assert.equal(playlistItemCount({ items: { total: 0 } }), 0);
+  assert.equal(playlistItemCount({}), null);
+  assert.equal(playlistItemCount(null), null);
+  assert.equal(playlistItemCount({ items: { total: -1 } }), null);
+});
 
 function jsonResponse(payload, status = 200, headers = {}) {
   return new Response(JSON.stringify(payload), {

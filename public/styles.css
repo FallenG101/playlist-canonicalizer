@@ -215,10 +215,11 @@ details code { color: var(--cream); user-select: all; }
 .playlist-picker-dialog h2 { margin: 0; font-family: Georgia, serif; font-size: 34px; font-weight: 400; }
 .playlist-picker-card > p:not(.eyebrow):not(.apply-dialog-error):not(.playlist-picker-summary) { margin: 10px 0 18px; color: var(--muted); font-size: 12px; line-height: 1.55; }
 .playlist-picker-list { display: grid; max-height: min(48vh, 420px); overflow: auto; border: 1px solid var(--line); border-radius: 4px; background: #121612; }
-.playlist-picker-option { display: flex; align-items: flex-start; gap: 10px; padding: 12px 13px; border-bottom: 1px solid var(--line); color: #d4dbd1; font-size: 11px; line-height: 1.45; cursor: pointer; }
+.playlist-picker-option { display: flex; align-items: flex-start; min-width: 0; gap: 10px; margin: 0; padding: 12px 13px; border-bottom: 1px solid var(--line); color: #d4dbd1; font-size: 11px; line-height: 1.45; cursor: pointer; }
 .playlist-picker-option:last-child { border-bottom: 0; }
 .playlist-picker-option:hover { background: #1c221c; }
-.playlist-picker-option input { margin: 2px 0 0; accent-color: var(--green); }
+.playlist-picker-option input[type="checkbox"] { flex: 0 0 16px; width: 16px; height: 16px; margin: 1px 0 0; padding: 0; accent-color: var(--green); }
+.playlist-picker-option span { min-width: 0; overflow-wrap: anywhere; }
 .playlist-picker-summary { min-height: 18px; margin: 12px 0 0; color: #aab3a7; font-size: 10px; line-height: 1.5; }
 .dialog-close { position: absolute; top: 17px; right: 18px; border: 0; background: transparent; color: #747d72; font-size: 23px; cursor: pointer; }
 .dialog-close:hover { color: var(--text); }

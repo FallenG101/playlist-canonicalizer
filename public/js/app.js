@@ -18,7 +18,7 @@ import {
   groupReviewItems,
   proposalId,
 } from './review.js';
-import { SpotifyClient } from './spotify.js';
+import { playlistItemCount, SpotifyClient } from './spotify.js';
 import { PlaylistScanCache } from './scan-cache.js';
 
 const $ = (selector) => document.querySelector(selector);
@@ -761,7 +761,11 @@ function exportableScan(scan) {
 
 function playlistPickerLabel(playlist) {
   const owner = playlist.owner?.display_name || playlist.owner?.id || 'Unknown owner';
-  return `${playlist.name || 'Untitled playlist'} · ${playlist.collaborative ? 'Collaborative' : `Owned by ${owner}`} · ${formatNumber(playlist.tracks?.total)} tracks`;
+  const itemCount = playlistItemCount(playlist);
+  const itemLabel = itemCount !== null
+    ? `${formatNumber(itemCount)} items`
+    : 'item count unavailable';
+  return `${playlist.name || 'Untitled playlist'} · ${playlist.collaborative ? 'Collaborative' : `Owned by ${owner}`} · ${itemLabel}`;
 }
 
 function selectedPlaylistIds() {

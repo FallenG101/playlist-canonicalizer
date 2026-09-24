@@ -1,5 +1,10 @@
 const API_ROOT = 'https://api.spotify.com/v1';
 
+export function playlistItemCount(playlist) {
+  const count = playlist?.items?.total ?? playlist?.tracks?.total;
+  return Number.isSafeInteger(count) && count >= 0 ? count : null;
+}
+
 function spotifyApiUrl(pathOrUrl) {
   const url = /^https?:/i.test(pathOrUrl)
     ? new URL(pathOrUrl)
