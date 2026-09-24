@@ -361,3 +361,102 @@ test('album-family scoring cannot choose between same-year remasters with unveri
   ]);
   assert.equal(result.proposalCount, 0);
 });
+
+test('an undated remaster is a manual choice even when it is the only candidate', () => {
+  const original = album('original', 'Original');
+  const undated = album('undated', 'Collection (Remastered)', '2026-01-01');
+  const result = analyzeInventory([
+    placement(track('old', 'Song', original), 'Original'),
+    placement(track('new', 'Song', undated), 'Undated'),
+  ]);
+  const proposal = result.families.flatMap((family) => family.proposals)
+    .find((item) => item.sourceTrack.id === 'old');
+  assert.equal(proposal.requiresCandidateChoice, true);
+  assert.equal(proposal.candidateOptions.length, 1);
+  assert.match(proposal.explanation, /candidate remaster year is unknown/i);
+});
+
+test('dated recommendation requires choice when another scanned remaster is undated', () => {
+  const original = album('original', 'Original');
+  const dated = album('dated', '2024 Reissue');
+  const undated = album('undated', 'Collection (Remastered)');
+  const result = analyzeInventory([
+    placement(track('old', 'Song', original), 'Original'),
+    placement(track('dated-track', 'Song (2024 Remaster)', dated), 'Dated'),
+    placement(track('undated-track', 'Song', undated), 'Undated'),
+  ]);
+  const proposal = result.families.flatMap((family) => family.proposals)
+    .find((item) => item.sourceTrack.id === 'old');
+  assert.equal(proposal.replacementTrack.id, 'dated-track');
+  assert.equal(proposal.requiresCandidateChoice, true);
+  assert.match(proposal.explanation, /undated alternative/i);
+});
+
+test('an undated current remaster cannot be silently ranked below a dated candidate', () => {
+  const original = album('original', 'Record (Remastered)');
+  const dated = album('dated', 'Other Record');
+  const result = analyzeInventory([
+    placement(track('old', 'Song', original), 'Current'),
+    placement(track('new', 'Song (2024 Remaster)', dated), 'Candidate'),
+  ]);
+  const proposal = result.families.flatMap((family) => family.proposals)
+    .find((item) => item.sourceTrack.id === 'old');
+  assert.equal(proposal.requiresCandidateChoice, true);
+  assert.match(proposal.explanation, /current remaster year is unknown/i);
+});
+
+test('tracks the true year-label source and matches "Remastered in 2024"', () => {
+  const original = album('original', 'Original');
+  const datedAlbum = album('dated', 'Collection (2024 Remaster)');
+  const candidate = track('new', 'Song (Remastered in 2024)', datedAlbum);
+  assert.equal(remasterDetails(candidate).yearSource, 'track title');
+  const albumOnly = track('album-only', 'Song (Remastered)', datedAlbum);
+  assert.equal(remasterDetails(albumOnly).yearSource, 'album title');
+  const result = analyzeInventory([
+    placement(track('old', 'Song', original), 'Original'),
+    placement(candidate, 'Remaster'),
+  ]);
+  assert.equal(result.families.flatMap((family) => family.proposals)
+    .find((item) => item.sourceTrack.id === 'old').replacementTrack.id, 'new');
+});
+
+test('album-family matching cannot bypass manual choice for an undated current remaster', () => {
+  const undated = album('undated', 'Record (Remastered)', '2014-01-01', 9);
+  const dated = album('dated', 'Record (2024 Remaster)', '2024-01-01', 20);
+  const withIsrc = (id, onAlbum) => ({
+    ...track(id, 'Song', onAlbum), external_ids: { isrc: 'USAAA2400001' },
+  });
+  const result = analyzeInventory([
+    placement(withIsrc('old', undated), 'Current'),
+    placement(withIsrc('new', dated), 'Candidate'),
+  ]);
+  const proposal = result.families.flatMap((family) => family.proposals)
+    .find((item) => item.sourceTrack.id === 'old');
+  assert.equal(proposal.crossAlbumRemaster, true);
+  assert.equal(proposal.requiresCandidateChoice, true);
+});
+
+test('album-family matching cannot bypass the strict remaster duration limit', () => {
+  const original = album('original', 'Record', '2014-01-01');
+  const remaster = album('remaster', 'Record (2024 Remaster)', '2024-01-01', 20);
+  const oldTrack = { ...track('old', 'Song', original, false, 220_000), external_ids: { isrc: 'USAAA2400001' } };
+  const newTrack = { ...track('new', 'Song', remaster, false, 225_500), external_ids: { isrc: 'USAAA2400001' } };
+  const result = analyzeInventory([
+    placement(oldTrack, 'Current'),
+    placement(newTrack, 'Candidate'),
+  ]);
+  assert.equal(result.proposalCount, 0);
+});
+
+test('a shared ISRC without durations is not enough for a remaster proposal', () => {
+  const original = album('original', 'Record', '2014-01-01');
+  const remaster = album('remaster', 'Record (2024 Remaster)', '2024-01-01', 20);
+  const withIsrc = (id, onAlbum) => ({
+    ...track(id, 'Song', onAlbum), duration_ms: null, external_ids: { isrc: 'USAAA2400001' },
+  });
+  const result = analyzeInventory([
+    placement(withIsrc('old', original), 'Current'),
+    placement(withIsrc('new', remaster), 'Candidate'),
+  ]);
+  assert.equal(result.proposalCount, 0);
+});

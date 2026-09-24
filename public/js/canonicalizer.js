@@ -145,11 +145,13 @@ export function remasterDetails(track) {
   const albumName = track?.album?.name || '';
   const trackLabeled = REMASTER_PATTERN.test(trackName);
   const albumLabeled = REMASTER_PATTERN.test(albumName);
+  const trackYear = trackLabeled ? labeledRemasterYear(trackName) : null;
+  const albumYear = albumLabeled ? labeledRemasterYear(albumName) : null;
   return {
     labeled: trackLabeled || albumLabeled,
-    year: (trackLabeled && labeledRemasterYear(trackName)) ||
-      (albumLabeled && labeledRemasterYear(albumName)) || null,
+    year: trackYear || albumYear || null,
     source: trackLabeled ? 'track title' : albumLabeled ? 'album title' : null,
+    yearSource: trackYear ? 'track title' : albumYear ? 'album title' : null,
   };
 }
 
@@ -164,7 +166,7 @@ function remasterIdentity(track) {
   const stripRemasterLabel = (label) => label
     .replace(/\b(?:19|20)\d{2}\b/g, ' ')
     .replace(/\bremaster(?:ed)?\b/gi, ' ')
-    .replace(/\b(?:digital|newly|version|edition)\b/gi, ' ')
+    .replace(/\b(?:digital|newly|version|edition|in)\b/gi, ' ')
     .trim();
   let title = typeof track.name === 'string' ? track.name : '';
   title = title.replace(/\s*[([]([^\])]+)[\])]\s*/g, (whole, inside) =>
@@ -229,17 +231,28 @@ function bestCrossAlbumRemaster(source, candidates, preferences) {
   const sameYear = eligible.filter((track) => remasterDetails(track).year === selectedYear);
   // Different ISRCs for equally dated editions leave the recording/master uncertain.
   const knownIsrcs = new Set(sameYear.map((track) => track.external_ids?.isrc).filter(Boolean));
-  const requiresChoice = sameYear.length > 1 &&
-    (knownIsrcs.size !== 1 || sameYear.some((track) => !track.external_ids?.isrc));
+  const uncertainty = [];
+  if (!selectedYear) uncertainty.push('The candidate remaster year is unknown.');
+  if (sourceRemaster.labeled && !sourceRemaster.year) {
+    uncertainty.push('The current remaster year is unknown, so a newer master cannot be verified.');
+  }
+  if (selectedYear && eligible.some((track) => remasterDetails(track).year === null)) {
+    uncertainty.push('An undated alternative could be newer.');
+  }
+  if (sameYear.length > 1 &&
+      (selectedYear === null || knownIsrcs.size !== 1 || sameYear.some((track) => !track.external_ids?.isrc))) {
+    uncertainty.push('Multiple candidates cannot be distinguished by date and recording ID.');
+  }
+  const requiresChoice = uncertainty.length > 0;
   const description = selectedYear
-    ? `${selectedYear} remaster labeled in the ${remasterDetails(replacement).source}`
+    ? `${selectedYear} remaster labeled in the ${remasterDetails(replacement).yearSource}`
     : `Remaster labeled in the ${remasterDetails(replacement).source}; mastering year unknown`;
   const sourceDescription = sourceRemaster.year
     ? `Current version is labeled ${sourceRemaster.year} remaster.`
     : sourceRemaster.labeled ? 'Current remaster year is unknown.' : 'Current version has no remaster label.';
   return {
     replacement,
-    explanation: `${description}. ${sourceDescription} Album release dates were not used as remaster dates.${requiresChoice ? ' Multiple equally dated candidates cannot be distinguished; choose one manually.' : ''}`,
+    explanation: `${description}. ${sourceDescription} Album release dates were not used as remaster dates.${requiresChoice ? ` ${uncertainty.join(' ')} Choose a candidate manually.` : ''}`,
     candidateCount: eligible.length,
     dated: selectedYear !== null,
     options: eligible,
@@ -326,13 +339,19 @@ export function analyzeInventory(placements, suppliedPreferences = {}) {
         const manualOverride = preferences.manualAlbumOverrides[familyKey] === canonical.album.id;
         const taylorsVersion = preferences.preferTaylorsVersion &&
           /\btaylor'?s version\b/i.test(`${replacement.name} ${canonical.album.name}`);
+        if (!manualOverride && !taylorsVersion && sourceRemaster.labeled && !sourceRemaster.year) continue;
+        const sameIsrc = Boolean(placement.track.external_ids?.isrc &&
+          placement.track.external_ids.isrc === replacement.external_ids?.isrc);
+        if (!manualOverride && !taylorsVersion && (sourceRemaster.labeled || replacementRemaster.labeled) &&
+            (!Number.isFinite(placement.track.duration_ms) || placement.track.duration_ms <= 0 ||
+              !Number.isFinite(replacement.duration_ms) || replacement.duration_ms <= 0 ||
+              Math.abs(placement.track.duration_ms - replacement.duration_ms) > 3000)) continue;
         if (!manualOverride && !taylorsVersion && sourceRemaster.labeled &&
             (!replacementRemaster.labeled ||
               (sourceRemaster.year && (!replacementRemaster.year || replacementRemaster.year < sourceRemaster.year)))) continue;
         if (!manualOverride && !taylorsVersion && sourceRemaster.labeled && replacementRemaster.labeled &&
             (!sourceRemaster.year || !replacementRemaster.year || sourceRemaster.year === replacementRemaster.year) &&
-            (!placement.track.external_ids?.isrc ||
-              placement.track.external_ids.isrc !== replacement.external_ids?.isrc)) continue;
+            !sameIsrc) continue;
         proposals.push({
           playlist: placement.playlist,
           position: placement.position,

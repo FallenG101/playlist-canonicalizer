@@ -618,7 +618,7 @@ function reviewItemCard(item) {
       text: `${item.explanation} Listen to both recordings before approving.`,
     })] : []),
   ]);
-  if (item.crossAlbumRemaster && item.candidateOptions?.length > 1) {
+  if (item.crossAlbumRemaster && (item.requiresCandidateChoice || item.candidateOptions?.length > 1)) {
     const picker = element('select', { className: 'candidate-select' });
     picker.setAttribute('aria-label', `Choose remaster for ${item.sourceTrack.name}`);
     if (item.requiresCandidateChoice && !item.candidateChosen) {
