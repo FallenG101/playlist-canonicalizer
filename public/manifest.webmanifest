@@ -1,6 +1,6 @@
 {
   "id": "./",
-  "name": "Spotify Canonicalizer",
+  "name": "Canonicalizer",
   "short_name": "Canonicalizer",
   "description": "Review alternate Spotify album releases and approve playlist changes one at a time.",
   "start_url": "./",

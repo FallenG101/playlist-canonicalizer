@@ -1,6 +1,6 @@
 # Canonicalizer
 
-A local playlist canonicalizer for Spotify. You choose which playlists you own or collaborate on to inventory; it then groups likely alternate album releases, scores a proposed canonical edition, and applies only the replacements you individually approve.
+A browser-based playlist canonicalizer for Spotify. You choose which playlists you own or collaborate on to inventory; it then groups likely alternate album releases, scores a proposed canonical edition, and applies only the replacements you individually approve.
 
 This is an independent project and is not affiliated with, endorsed by, or sponsored by Spotify. Spotify is a trademark of Spotify AB.
 
@@ -25,6 +25,12 @@ This is an independent project and is not affiliated with, endorsed by, or spons
 Read [PRIVACY.md](PRIVACY.md) before connecting an account.
 
 ## Run it
+
+The hosted PWA is available at [https://falleng101.github.io/playlist-canonicalizer/](https://falleng101.github.io/playlist-canonicalizer/) after GitHub Pages deployment is enabled. No local command or server is needed. Add that **exact** URL, including the trailing slash, to your app's Redirect URIs in the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard) before connecting. Keep the existing loopback redirect URI if you also want to run the local version. The hosted origin has separate browser storage, so you will need to enter your Client ID again; do not enter a Client Secret.
+
+The GitHub Pages site is publicly accessible, but only Spotify accounts permitted by your Spotify app's current quota mode can successfully use its API access. GitHub Pages serves the static app and can see the short-lived OAuth callback URL; Spotify tokens and playlist data stay in your browser and are sent directly to Spotify. Hosting does not increase Spotify API quotas or constitute Spotify policy approval. See [PRIVACY.md](PRIVACY.md) and [SPOTIFY_COMPLIANCE.md](SPOTIFY_COMPLIANCE.md).
+
+To run the local version instead:
 
 On macOS, double-click `start.command`, or run:
 
