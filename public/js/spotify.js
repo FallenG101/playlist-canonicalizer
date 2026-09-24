@@ -146,6 +146,7 @@ export class SpotifyClient {
 
   async scanCandidates(onProgress = () => {}) {
     const profile = await this.profile();
+    if (!profile?.id) throw new Error('Spotify returned an invalid account profile. Connect again before scanning.');
     onProgress({ phase: 'playlists', detail: 'Finding playlists you own or collaborate on…', percent: 6 });
     const visiblePlaylists = await this.playlists();
     const playlists = visiblePlaylists.filter(

@@ -130,3 +130,26 @@ test('does not propose a same-title track when durations differ substantially', 
   ]);
   assert.equal(result.proposalCount, 0);
 });
+
+test('missing artist or title metadata cannot create a cross-album replacement', () => {
+  const firstAlbum = { ...album('first', 'Record'), artists: [] };
+  const secondAlbum = { ...album('second', 'Record (Deluxe)'), artists: [] };
+  const firstTrack = { ...track('one', 'Song', firstAlbum), artists: [] };
+  const secondTrack = { ...track('two', 'Song', secondAlbum), artists: [] };
+  const result = analyzeInventory([placement(firstTrack), placement(secondTrack)]);
+  assert.equal(result.proposalCount, 0);
+  assert.equal(result.families.length, 0);
+  assert.equal(trackIdentity({ name: null, artists: null }), '');
+  assert.equal(baseAlbumName(null), '');
+});
+
+test('does not propose a replacement Spotify marks unplayable', () => {
+  const originalAlbum = album('original', 'Record');
+  const deluxeAlbum = album('deluxe', 'Record (Deluxe)');
+  const unavailable = { ...track('new', 'Song', deluxeAlbum), is_playable: false };
+  const result = analyzeInventory([
+    placement(track('old', 'Song', originalAlbum)),
+    placement(unavailable),
+  ]);
+  assert.equal(result.proposalCount, 0);
+});

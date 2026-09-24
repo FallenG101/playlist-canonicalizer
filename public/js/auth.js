@@ -76,7 +76,12 @@ async function tokenRequest(body) {
 }
 
 export function redirectUri() {
-  return `${location.origin}/`;
+  const appPath = new URL('./', location.href).pathname;
+  return `${location.origin}${appPath}`;
+}
+
+function appBasePath() {
+  return new URL('./', location.href).pathname;
 }
 
 export function savedClientId() {
@@ -130,7 +135,7 @@ export async function finishAuthorization() {
   if (error) {
     sessionStorage.removeItem(VERIFIER_KEY);
     sessionStorage.removeItem(STATE_KEY);
-    history.replaceState({}, '', '/');
+    history.replaceState({}, '', appBasePath());
     throw new Error(error === 'access_denied' ? 'Spotify access was not granted.' : `Spotify authorization failed: ${error}`);
   }
   if (!code) return false;
@@ -142,11 +147,11 @@ export async function finishAuthorization() {
   if (!expectedState || actualState !== expectedState || !verifier || !clientId) {
     sessionStorage.removeItem(VERIFIER_KEY);
     sessionStorage.removeItem(STATE_KEY);
-    history.replaceState({}, '', '/');
+    history.replaceState({}, '', appBasePath());
     throw new Error('The Spotify sign-in response could not be verified. Please connect again.');
   }
 
-  history.replaceState({}, '', '/');
+  history.replaceState({}, '', appBasePath());
   try {
     const payload = await tokenRequest({
       client_id: clientId,

@@ -1,8 +1,8 @@
 # Privacy Policy
 
-Last updated: 2026-09-17
+Last updated: 2026-09-23
 
-Canonicalizer is a local, independent tool for reviewing and changing playlists on Spotify. It has no hosted backend, analytics, advertising, telemetry, or crash-reporting service.
+Canonicalizer is an independent browser app for reviewing and changing playlists on Spotify. It has no application backend, analytics, advertising, telemetry, or crash-reporting service. It can run from the local server or be delivered as static files from an HTTPS host.
 
 ## Information the app accesses
 
@@ -21,17 +21,17 @@ The data is used only to inventory eligible playlists, identify possible alterna
 
 ## Storage and retention
 
-- OAuth access and refresh tokens are stored in browser `sessionStorage` and are not written to disk by the app. They disappear when the browser session ends or when you disconnect.
+- OAuth access and refresh tokens are stored in browser `sessionStorage`, not sent to the app's file host, and removed by the app when you disconnect. Browsers may restore session storage after a restart, so closing a window is not a guaranteed way to erase tokens.
 - Your public Spotify developer Client ID is stored in browser `localStorage` so it does not need to be re-entered.
 - Review decisions, pre-change backups, and interrupted-operation safety records are stored in `localStorage` on your device.
-- Resumable scan metadata is stored in IndexedDB on your device for no more than 24 hours and is keyed to the Spotify account, playlist, and playlist snapshot.
+- Resumable scan metadata is stored in IndexedDB on your device and keyed to the Spotify account, playlist, and playlist snapshot. Records older than 24 hours are not reused and are deleted when next accessed or when you disconnect; they may remain stored until then.
 - Scan exports and backup downloads are files you intentionally save. Canonicalizer cannot delete those downloaded files.
 
-No Spotify data is sent to the local web server. The browser communicates directly with Spotify's account and Web API services.
+The browser communicates directly with Spotify's account and Web API services. If you use a hosted copy, its provider receives ordinary connection information and the short-lived OAuth authorization code and state in the callback URL when Spotify redirects you back to the app. The app removes those parameters from the address bar before exchanging the code with Spotify. The host may retain the callback URL in its access logs; choose a host you trust. The app does not send that provider your access or refresh tokens, playlist contents, scan results, or backups.
 
 ## Sharing and sale
 
-Canonicalizer does not sell, rent, share, or transmit your Spotify data to the project developer or to third parties. Spotify receives the OAuth and API requests required to provide its service.
+Canonicalizer does not sell, rent, share, or transmit your Spotify data to the project developer or to third parties. Spotify receives the OAuth and API requests required to provide its service. A static hosting provider may process ordinary web request metadata when serving the app.
 
 ## Cookies and third parties
 
@@ -39,7 +39,7 @@ Canonicalizer does not set cookies and does not permit third parties to set cook
 
 ## Your choices and deletion
 
-Select **Disconnect** to remove OAuth tokens and locally stored Spotify account data, review decisions, backups, interrupted-operation records, and the scan cache. You can also clear site data for `127.0.0.1:4387` in your browser. Delete any scan exports or backup files separately using your operating system.
+Select **Disconnect** to remove OAuth tokens and locally stored Spotify account data, review decisions, backups, interrupted-operation records, and the scan cache. You can also clear browser site data for the app's current address. Delete any scan exports or backup files separately using your operating system.
 
 Connecting again may allow you to choose a different Spotify account. Canonicalizer clears data associated with a previous connection before starting a new authorization.
 

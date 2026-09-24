@@ -3,9 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="referrer" content="no-referrer" />
     <meta name="color-scheme" content="dark" />
     <meta name="theme-color" content="#101310" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Canonicalizer" />
     <title>Canonicalizer</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./assets/canonicalizer-icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" sizes="180x180" href="./assets/canonicalizer-icon-180.png" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -23,12 +30,13 @@
     <div class="ambient ambient-two"></div>
 
     <header class="site-header shell">
-      <a class="brand" href="/" aria-label="Canonicalizer home">
+      <a class="brand" href="./" aria-label="Canonicalizer home">
         <span class="brand-mark" aria-hidden="true">C</span>
         <span>Canonicalizer</span>
       </a>
       <div class="header-actions">
         <span class="safety-pill"><span></span> Review-gated writes</span>
+        <button class="text-button install-button" id="install-button" type="button">Install app</button>
         <button class="text-button hidden" id="disconnect-button" type="button">Disconnect</button>
       </div>
     </header>
@@ -185,7 +193,7 @@
 
           <aside class="roadmap-card">
             <div><span>SAFE BY DESIGN</span><h3>Review first. Apply precisely.</h3></div>
-            <p>Every Apply rechecks the playlist identity and snapshot, stores a backup, requests a download, then changes only individually approved tracks in that playlist.</p>
+            <p>Every Apply rechecks the playlist identity and snapshot, stores a backup, and requests a download. Spotify then replaces that playlist’s full item list with the approved positions changed.</p>
             <div class="roadmap"><span class="done">01 Scan</span><span class="done">02 Match</span><span class="done">03 Review</span><span class="done">04 Backup</span><span class="current">05 Apply</span></div>
           </aside>
         </div>
@@ -205,6 +213,7 @@
         <p class="eyebrow">Final safety check</p>
         <h2>Confirm this playlist?</h2>
         <p id="apply-dialog-summary">A local backup is ready.</p>
+        <p class="apply-concurrency-note">Spotify’s update replaces the entire item list for this playlist. Unapproved tracks keep their order and URI, but their per-item added date or attribution may change.</p>
         <div class="apply-progress" aria-live="polite">
           <div class="apply-progress-track" role="progressbar" aria-label="Playlist Apply progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
             <span id="apply-progress-bar"></span>

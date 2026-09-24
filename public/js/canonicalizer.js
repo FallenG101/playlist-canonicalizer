@@ -14,7 +14,7 @@ export const DEFAULT_PREFERENCES = Object.freeze({
 });
 
 export function normalizeText(value = '') {
-  return value
+  return (typeof value === 'string' ? value : '')
     .normalize('NFKD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
@@ -32,18 +32,21 @@ function removeQualifiedBrackets(value, qualifierPattern) {
 }
 
 export function baseAlbumName(name = '') {
-  let base = removeQualifiedBrackets(name, EDITION_PATTERN);
+  let base = removeQualifiedBrackets(typeof name === 'string' ? name : '', EDITION_PATTERN);
   base = base.replace(/\s*[-–—:]\s*([^\n]+)$/g, (whole, suffix) => (EDITION_PATTERN.test(suffix) ? ' ' : whole));
   return normalizeText(base);
 }
 
 export function trackIdentity(track) {
-  let title = removeQualifiedBrackets(track?.name || '', SAFE_TRACK_QUALIFIERS);
+  let title = removeQualifiedBrackets(typeof track?.name === 'string' ? track.name : '', SAFE_TRACK_QUALIFIERS);
   title = title.replace(/\s*[-–—:]\s*([^\n]+)$/g, (whole, suffix) =>
     SAFE_TRACK_QUALIFIERS.test(suffix) ? ' ' : whole,
   );
-  const artists = (track?.artists || []).map((artist) => normalizeText(artist.name)).join('|');
-  return `${normalizeText(title)}::${artists}`;
+  const artists = Array.isArray(track?.artists)
+    ? track.artists.map((artist) => normalizeText(artist?.name)).filter(Boolean).join('|')
+    : '';
+  const normalizedTitle = normalizeText(title);
+  return normalizedTitle && artists ? `${normalizedTitle}::${artists}` : '';
 }
 
 export function albumFamilyKey(album) {
@@ -105,9 +108,12 @@ function canonicalReasons(canonical, alternatives, familyKey, preferences) {
   return reasons;
 }
 
-function bestTrackMatch(sourceTrack, canonicalTracks, preferences) {
+function bestTrackMatch(sourceTrack, canonicalTracksByIdentity, preferences) {
   const identity = trackIdentity(sourceTrack);
-  const candidates = canonicalTracks.filter((track) => trackIdentity(track) === identity);
+  if (!identity) return null;
+  const candidates = (canonicalTracksByIdentity.get(identity) || []).filter(
+    (track) => track.is_playable !== false && !track.restrictions?.reason,
+  );
   if (!candidates.length) return null;
   const sourceDuration = Number(sourceTrack.duration_ms) || 0;
   const pool = candidates.filter((track) => {
@@ -151,7 +157,7 @@ export function analyzeInventory(placements, suppliedPreferences = {}) {
   const albumMap = new Map();
 
   for (const placement of placements) {
-    const album = placement.track.album;
+    const album = placement?.track?.album;
     if (!album?.id) continue;
     if (!albumMap.has(album.id)) {
       albumMap.set(album.id, { album, placements: [], tracks: [], explicitCount: 0, explicitRatio: 0 });
@@ -170,24 +176,31 @@ export function analyzeInventory(placements, suppliedPreferences = {}) {
   const grouped = new Map();
   for (const candidate of albumMap.values()) {
     const key = albumFamilyKey(candidate.album);
+    if (key.startsWith('::') || key.endsWith('::')) continue;
     if (!grouped.has(key)) grouped.set(key, []);
     grouped.get(key).push(candidate);
   }
 
   const families = [];
   for (const [familyKey, candidates] of grouped) {
-    if (candidates.length < 2 || familyKey.endsWith('::')) continue;
+    if (candidates.length < 2) continue;
     const ranked = [...candidates]
       .map((candidate) => ({ ...candidate, score: scoreAlbum(candidate, familyKey, preferences) }))
       .sort((a, b) => b.score - a.score || b.placements.length - a.placements.length || a.album.id.localeCompare(b.album.id));
     const canonical = ranked[0];
     const alternatives = ranked.slice(1);
-    const canonicalTracks = canonical.tracks;
+    const canonicalTracksByIdentity = new Map();
+    for (const track of canonical.tracks) {
+      const identity = trackIdentity(track);
+      if (!identity) continue;
+      if (!canonicalTracksByIdentity.has(identity)) canonicalTracksByIdentity.set(identity, []);
+      canonicalTracksByIdentity.get(identity).push(track);
+    }
     const proposals = [];
 
     for (const source of alternatives) {
       for (const placement of source.placements) {
-        const replacement = bestTrackMatch(placement.track, canonicalTracks, preferences);
+        const replacement = bestTrackMatch(placement.track, canonicalTracksByIdentity, preferences);
         if (!replacement || replacement.id === placement.track.id) continue;
         proposals.push({
           playlist: placement.playlist,

@@ -38,7 +38,7 @@ export function groupReviewItems(items, mode = 'playlist') {
     if (!groups.has(key)) {
       groups.set(key, {
         key,
-        label: mode === 'playlist' ? item.playlist.name : item.canonicalAlbum.name,
+        label: mode === 'playlist' ? (item.playlist.name || 'Untitled playlist') : (item.canonicalAlbum.name || 'Unknown album'),
         caption: mode === 'playlist' ? `${item.playlist.collaborative ? 'Collaborative' : 'Owned'} playlist` : item.familyArtist,
         externalUrl: mode === 'playlist' ? item.playlist.externalUrl : item.canonicalAlbum.external_urls?.spotify,
         items: [],
@@ -51,8 +51,8 @@ export function groupReviewItems(items, mode = 'playlist') {
   for (const group of result) {
     group.items.sort((a, b) =>
       mode === 'playlist'
-        ? a.position - b.position || a.sourceTrack.name.localeCompare(b.sourceTrack.name)
-        : a.playlist.name.localeCompare(b.playlist.name) || a.position - b.position,
+        ? a.position - b.position || (a.sourceTrack.name || '').localeCompare(b.sourceTrack.name || '')
+        : (a.playlist.name || '').localeCompare(b.playlist.name || '') || a.position - b.position,
     );
   }
   return result.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }));

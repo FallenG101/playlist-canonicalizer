@@ -15,9 +15,9 @@ This is an independent project and is not affiliated with, endorsed by, or spons
 - Apply is blocked for playlists over 100 items. A permitted Apply uses one replace request rather than a partially complete multi-request rewrite.
 - Mutation requests are never retried automatically. After any response or network failure, the app rereads the playlist and accepts success only when the exact intended URI sequence is present.
 - An in-flight marker survives reloads. If the app cannot prove that an interrupted operation produced either the original or intended playlist, it blocks all further writes and asks for manual inspection.
-- Completed playlist scans are cached in browser IndexedDB by account, playlist ID, and Spotify snapshot for no more than 24 hours. A retry skips unchanged playlists and resumes from the first unfinished or changed playlist.
+- Completed playlist scans are cached in browser IndexedDB by account, playlist ID, and Spotify snapshot. Records older than 24 hours are not reused and are removed when next accessed or when you disconnect. A retry skips unchanged playlists and resumes from the first unfinished or changed playlist.
 - Backups are recovery records, not an automatic restore feature. The app never overwrites a playlist during error recovery.
-- Tokens live in browser `sessionStorage` and disappear when the browser session ends or you disconnect.
+- Tokens live in browser `sessionStorage` and are removed by the app when you disconnect. Browser session restore may preserve them after a restart.
 - The Spotify Client ID is the only persisted setting; it is public app metadata, not a secret.
 - Scan results remain in memory unless you explicitly export them as JSON.
 - Disconnect deletes locally stored Spotify account data, review decisions, backups, interrupted-operation records, and scan cache. Files you downloaded remain under your control.
@@ -39,6 +39,14 @@ npm start
 ```
 
 Then open [http://127.0.0.1:4387](http://127.0.0.1:4387).
+
+## Install as an app
+
+Canonicalizer is an installable Progressive Web App. On desktop, open it in a supported browser and select **Install app** (or use the browser's install menu). On iPhone or iPad, open the hosted HTTPS version in Safari, tap **Share**, then **Add to Home Screen**. On Android, use the browser menu's **Install app** or **Add to Home screen** action.
+
+The local `127.0.0.1` version can only be installed on the computer running it. To use the app on phones or other computers, deploy the `public/` folder to an HTTPS static host. The Spotify redirect URI is derived from the app's full base address (including a hosting subpath), so register that exact HTTPS URL in the Spotify Developer Dashboard. The host receives the short-lived OAuth authorization code in the callback URL, so use a trusted host with appropriate access-log handling. Spotify API calls remain online-only; the service worker caches only the generic app shell and never caches Spotify responses, login callbacks, tokens, or scan data.
+
+The service worker checks the network before using its cached app shell. Bump `CACHE_NAME` in `public/sw.js` when changing the cache format or file list.
 
 In the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard):
 
@@ -70,7 +78,7 @@ The review queue can be switched between two views without losing decisions:
 
 Every proposal starts pending and must be individually approved or skipped. There is intentionally no global “replace all” action. Approval decisions are stored locally, shared between both views, and included in the JSON export. Proposal IDs include the playlist snapshot ID, so decisions do not carry over after that playlist changes.
 
-Apply operates one playlist at a time and is limited to 100 total items. It preserves the playlist's item order—including duplicates and episodes—replaces only approved positions, and then asks you to rescan for verification. If the account, playlist identity, or snapshot changes between scan, backup, and final confirmation, the operation stops before writing. Do not edit the same playlist elsewhere while Apply is running: Spotify's replace endpoint does not offer an atomic snapshot precondition, so an external edit in the final check-to-write interval cannot be prevented, only detected afterward.
+Apply operates one playlist at a time and is limited to 100 total items. Spotify's endpoint replaces the playlist's entire item list in one request. The app sends the original URI sequence with only approved positions changed, preserving order and duplicates, but Spotify may update per-item added dates or attribution even for untouched entries. The app then asks you to rescan for verification. If the account, playlist identity, or snapshot changes between scan, backup, and final confirmation, the operation stops before writing. Do not edit the same playlist elsewhere while Apply is running: Spotify's replace endpoint does not offer an atomic snapshot precondition, so an external edit in the final check-to-write interval cannot be prevented, only detected afterward.
 
 Confidence scores are review aids, not guarantees.
 
@@ -90,5 +98,6 @@ npm run check
 - `public/js/scan-cache.js`: snapshot-keyed, credential-free IndexedDB storage for resumable scans.
 - `public/js/apply.js`: pure, validated, order-preserving apply-plan construction.
 - `public/js/app.js`: UI state, rendering, backups, confirmation, JSON export, Apply orchestration, and interrupted-operation reconciliation.
+- `public/manifest.webmanifest`, `public/sw.js`: install metadata and a narrowly scoped offline shell cache.
 
 Use a small test playlist first, inspect the downloaded backup, avoid simultaneous edits in Spotify, and rescan immediately after applying.

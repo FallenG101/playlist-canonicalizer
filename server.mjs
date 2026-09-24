@@ -1,16 +1,18 @@
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import { extname, join, normalize, relative } from 'node:path';
 
 const HOST = '127.0.0.1';
 const PORT = Number(process.env.PORT || 4387);
-const PUBLIC_DIR = new URL('./public/', import.meta.url).pathname;
+const PUBLIC_DIR = fileURLToPath(new URL('./public/', import.meta.url));
 
 const MIME_TYPES = {
   '.css': 'text/css; charset=utf-8',
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
+  '.webmanifest': 'application/manifest+json; charset=utf-8',
   '.svg': 'image/svg+xml',
 };
 
@@ -22,6 +24,7 @@ const securityHeaders = {
     "img-src 'self' https://i.scdn.co data:",
     "style-src 'self'",
     "script-src 'self'",
+    "worker-src 'self'",
     "font-src 'self'",
     "frame-ancestors 'none'",
     "base-uri 'self'",
@@ -43,7 +46,7 @@ const server = createServer(async (request, response) => {
   try {
     const pathname = new URL(request.url, `http://${request.headers.host}`).pathname;
     const filePath = safePath(pathname);
-    if (!filePath || request.method !== 'GET') {
+    if (!filePath || !['GET', 'HEAD'].includes(request.method)) {
       response.writeHead(404, securityHeaders).end('Not found');
       return;
     }
@@ -54,16 +57,16 @@ const server = createServer(async (request, response) => {
       return;
     }
 
-    const body = await readFile(filePath);
+    const body = request.method === 'HEAD' ? null : await readFile(filePath);
     response.writeHead(200, {
       ...securityHeaders,
       'Content-Type': MIME_TYPES[extname(filePath)] || 'application/octet-stream',
-      'Content-Length': body.length,
+      'Content-Length': body?.length ?? fileStat.size,
     });
-    response.end(body);
+    response.end(body || undefined);
   } catch (error) {
     response.writeHead(500, securityHeaders).end('Local server error');
-    console.error(error);
+    console.error('Local server error:', error?.code || error?.name || 'unknown');
   }
 });
 

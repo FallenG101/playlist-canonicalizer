@@ -7,6 +7,7 @@ import {
   hasWriteAccess,
   isValidClientId,
   normalizeClientId,
+  redirectUri,
 } from '../public/js/auth.js';
 
 class MemoryStorage {
@@ -21,6 +22,18 @@ test('normalizes pasted Client ID labels without assuming an alphanumeric format
   assert.equal(isValidClientId('spotify-client_123'), true);
   assert.equal(isValidClientId('client id with spaces'), false);
   assert.equal(isValidClientId('short'), false);
+});
+
+test('uses the exact app base path for hosted PWA OAuth redirects', () => {
+  const priorLocation = globalThis.location;
+  try {
+    globalThis.location = new URL('https://example.test/canonicalizer/index.html');
+    assert.equal(redirectUri(), 'https://example.test/canonicalizer/');
+    globalThis.location = new URL('http://127.0.0.1:4387/');
+    assert.equal(redirectUri(), 'http://127.0.0.1:4387/');
+  } finally {
+    globalThis.location = priorLocation;
+  }
 });
 
 test('refresh preserves the originally granted scopes when Spotify omits scope', async () => {

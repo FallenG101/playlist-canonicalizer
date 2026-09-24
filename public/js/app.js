@@ -38,6 +38,7 @@ const playlistList = $('#playlist-list');
 const proposalReviewList = $('#proposal-review-list');
 const emptyState = $('#empty-state');
 const toast = $('#toast');
+const installButton = $('#install-button');
 const playlistPickerDialog = $('#playlist-picker-dialog');
 const playlistPickerList = $('#playlist-picker-list');
 const playlistPickerSummary = $('#playlist-picker-summary');
@@ -62,7 +63,10 @@ let applyInProgress = false;
 let toastTimer = null;
 let rateLimitTimer = null;
 let playlistPickerOpen = false;
+let playlistPickerLoading = false;
+let scanInProgress = false;
 let pendingScanSource = null;
+let installPromptEvent = null;
 
 function storedRateLimitUntil() {
   const value = Number(sessionStorage.getItem(RATE_LIMIT_UNTIL_KEY) || 0);
@@ -105,6 +109,36 @@ function showToast(message) {
   toast.classList.add('visible');
   toastTimer = setTimeout(() => toast.classList.remove('visible'), 4200);
 }
+
+function updateInstallButton() {
+  const installed = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  installButton.classList.toggle('hidden', installed);
+}
+
+window.addEventListener('beforeinstallprompt', (event) => {
+  event.preventDefault();
+  installPromptEvent = event;
+  updateInstallButton();
+});
+
+window.addEventListener('appinstalled', () => {
+  installPromptEvent = null;
+  updateInstallButton();
+  showToast('Canonicalizer was added to your device.');
+});
+
+installButton.addEventListener('click', async () => {
+  if (!installPromptEvent) {
+    showToast('Install from your browser menu. On iPhone or iPad, use Share, then Add to Home Screen.');
+    return;
+  }
+  const promptEvent = installPromptEvent;
+  installPromptEvent = null;
+  await promptEvent.prompt();
+  const choice = await promptEvent.userChoice;
+  if (choice?.outcome === 'accepted') showToast('Canonicalizer is being installed.');
+  updateInstallButton();
+});
 
 function setAuthenticated(authenticated) {
   welcomeView.classList.toggle('hidden', authenticated);
@@ -149,11 +183,20 @@ function formatNumber(value) {
   return new Intl.NumberFormat().format(value || 0);
 }
 
+function spotifyExternalUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && url.hostname === 'open.spotify.com' ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
 function reviewCover(album) {
   const imageUrl = album.images?.[1]?.url || album.images?.[0]?.url;
   if (!imageUrl) return element('span', { className: 'review-item-cover' });
   const image = element('img', { className: 'review-item-cover', src: imageUrl, alt: `${album.name} cover` });
-  const spotifyUrl = album.external_urls?.spotify;
+  const spotifyUrl = spotifyExternalUrl(album.external_urls?.spotify);
   return spotifyUrl
     ? element('a', { className: 'review-cover-link', href: spotifyUrl }, [image])
     : image;
@@ -165,15 +208,17 @@ function spotifyTrackLink(track) {
     label,
     track.explicit ? element('span', { className: 'explicit-badge', text: 'E', title: 'Explicit' }) : null,
   ]);
-  return track.external_urls?.spotify
-    ? element('a', { className: 'track-link', href: track.external_urls.spotify }, [title])
+  const spotifyUrl = spotifyExternalUrl(track.external_urls?.spotify);
+  return spotifyUrl
+    ? element('a', { className: 'track-link', href: spotifyUrl }, [title])
     : title;
 }
 
 function spotifyAlbumLink(album) {
   const label = element('small', { text: album.name, title: album.name });
-  return album.external_urls?.spotify
-    ? element('a', { className: 'album-link', href: album.external_urls.spotify }, [label])
+  const spotifyUrl = spotifyExternalUrl(album.external_urls?.spotify);
+  return spotifyUrl
+    ? element('a', { className: 'album-link', href: spotifyUrl }, [label])
     : label;
 }
 
@@ -209,7 +254,7 @@ function persistReviewDecisions() {
 }
 
 function safeFilename(value) {
-  return value.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'playlist';
+  return String(value || '').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'playlist';
 }
 
 function downloadJson(payload, filename) {
@@ -269,7 +314,7 @@ async function playlistStateFor(plan) {
 
 async function withPlaylistLock(playlistId, task) {
   if (!navigator.locks?.request) {
-    throw new Error('This browser cannot safely prevent duplicate Apply requests across tabs. Use a current Chromium-based browser.');
+    throw new Error('This browser does not support the Web Locks safety check needed for Apply. Use a current browser with Web Locks support.');
   }
   return navigator.locks.request(
     `spotify-canonicalizer:${playlistId}`,
@@ -573,15 +618,16 @@ function renderReview() {
   $('#playlist-progress-label').textContent = `${globalCounts.decided} of ${globalCounts.total} decided`;
   $('#review-progress-bar').style.width = `${globalCounts.total ? (globalCounts.decided / globalCounts.total) * 100 : 0}%`;
   const appliedSummary = appliedPlaylists.size
-    ? `${appliedPlaylists.size} playlist${appliedPlaylists.size === 1 ? '' : 's'} changed; rescan before any further Apply.`
+    ? `${appliedPlaylists.size} playlist${appliedPlaylists.size === 1 ? '' : 's'} changed; rescan to verify those results.`
     : 'Nothing has been changed on Spotify.';
   $('#result-summary').textContent = `${globalCounts.pending} pending · ${globalCounts.approved} approved · ${globalCounts.skipped} skipped. ${appliedSummary}`;
   $('#review-kicker').textContent = reviewMode === 'playlist' ? 'CURRENT PLAYLIST' : 'CURRENT ALBUM FAMILY';
   $('#current-playlist-name').textContent = group.label;
   $('#current-playlist-name').title = group.label;
   const spotifyLink = $('#current-group-spotify-link');
-  spotifyLink.classList.toggle('hidden', !group.externalUrl);
-  if (group.externalUrl) spotifyLink.href = group.externalUrl;
+  const groupUrl = spotifyExternalUrl(group.externalUrl);
+  spotifyLink.classList.toggle('hidden', !groupUrl);
+  if (groupUrl) spotifyLink.href = groupUrl;
   else spotifyLink.removeAttribute('href');
   $('#current-playlist-summary').textContent = `${group.items.length} proposed replacement${group.items.length === 1 ? '' : 's'} · ${group.caption}`;
   const groupReviewPercent = groupCounts.total ? Math.round((groupCounts.decided / groupCounts.total) * 100) : 0;
@@ -796,10 +842,11 @@ async function handleScanFailure(error) {
 }
 
 async function openPlaylistPicker() {
-  if (applyInProgress || rateLimitActive() || playlistPickerOpen) {
+  if (applyInProgress || scanInProgress || playlistPickerLoading || rateLimitActive() || playlistPickerOpen) {
     if (rateLimitActive()) startRateLimitCountdown(Math.ceil((storedRateLimitUntil() - Date.now()) / 1000));
     return;
   }
+  playlistPickerLoading = true;
   setBusy(true);
   updateProgress({ detail: 'Loading playlist names only…', percent: 2 });
   try {
@@ -815,12 +862,13 @@ async function openPlaylistPicker() {
     const cooldownSeconds = await handleScanFailure(error);
     if (cooldownSeconds) startRateLimitCountdown(cooldownSeconds);
   } finally {
+    playlistPickerLoading = false;
     if (!playlistPickerOpen) setBusy(false);
   }
 }
 
 async function scanSelectedPlaylists() {
-  if (!pendingScanSource || applyInProgress) return;
+  if (!pendingScanSource || applyInProgress || scanInProgress) return;
   const source = pendingScanSource;
   const playlistIds = selectedPlaylistIds();
   if (!playlistIds.length) {
@@ -828,6 +876,7 @@ async function scanSelectedPlaylists() {
     playlistPickerError.classList.remove('hidden');
     return;
   }
+  scanInProgress = true;
   playlistPickerDialog.close();
   let cooldownSeconds = 0;
   setBusy(true);
@@ -849,6 +898,7 @@ async function scanSelectedPlaylists() {
     cooldownSeconds = await handleScanFailure(error);
   } finally {
     pendingScanSource = null;
+    scanInProgress = false;
     setBusy(false);
     if (cooldownSeconds) startRateLimitCountdown(cooldownSeconds);
   }
@@ -931,7 +981,7 @@ startSelectedScanButton.addEventListener('click', scanSelectedPlaylists);
 playlistPickerDialog.addEventListener('close', () => {
   playlistPickerOpen = false;
   pendingScanSource = null;
-  setBusy(false);
+  if (!scanInProgress) setBusy(false);
 });
 $('#confirm-apply-button').addEventListener('click', confirmPlaylistApply);
 $('#apply-dialog').addEventListener('close', () => {
@@ -944,6 +994,11 @@ exportButton.addEventListener('click', () => {
 });
 
 async function initialize() {
+  updateInstallButton();
+  if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === '127.0.0.1')) {
+    navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(() => {});
+  }
+
   if (location.protocol === 'file:') {
     $('#file-warning').classList.remove('hidden');
     document.title = 'Open Canonicalizer';
