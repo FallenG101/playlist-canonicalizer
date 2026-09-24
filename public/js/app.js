@@ -994,6 +994,11 @@ exportButton.addEventListener('click', () => {
 });
 
 async function initialize() {
+  if (window.top !== window.self) {
+    document.body.replaceChildren(document.createTextNode('Open Canonicalizer directly in a browser tab to use it.'));
+    return;
+  }
+
   updateInstallButton();
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === '127.0.0.1')) {
     navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(() => {});
