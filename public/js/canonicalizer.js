@@ -1,5 +1,5 @@
 const EDITION_PATTERN = /\b(deluxe|expanded|complete|anniversary|remaster(?:ed)?|special|collector'?s|bonus|legacy|super deluxe|forever|platinum|tour|taylor'?s version|tv)\b/i;
-const SAFE_TRACK_QUALIFIERS = /\b(remaster(?:ed)?|taylor'?s version|tv|explicit|clean|album version|single version|radio edit|bonus track)\b/i;
+const SAFE_TRACK_QUALIFIERS = /\b(remaster(?:ed)?|taylor'?s version|tv|explicit|clean|bonus track)\b/i;
 
 export const DEFAULT_PREFERENCES = Object.freeze({
   preferTaylorsVersion: true,
@@ -130,18 +130,48 @@ function bestTrackMatch(sourceTrack, canonicalTracksByIdentity, preferences) {
 }
 
 const REMASTER_PATTERN = /\bremaster(?:ed)?\b/i;
+const REMASTER_YEAR_BEFORE = /\b((?:19|20)\d{2})\s+(?:(?:digital|newly)\s+)?remaster(?:ed)?\b/i;
+const REMASTER_YEAR_AFTER = /\bremaster(?:ed)?(?:\s+(?:version|edition|in))?\s+((?:19|20)\d{2})\b/i;
+
+function labeledRemasterYear(name) {
+  if (typeof name !== 'string') return null;
+  const match = name.match(REMASTER_YEAR_BEFORE) || name.match(REMASTER_YEAR_AFTER);
+  const year = match ? Number(match[1]) : null;
+  return year && year <= new Date().getUTCFullYear() + 1 ? year : null;
+}
+
+export function remasterDetails(track) {
+  const trackName = track?.name || '';
+  const albumName = track?.album?.name || '';
+  const trackLabeled = REMASTER_PATTERN.test(trackName);
+  const albumLabeled = REMASTER_PATTERN.test(albumName);
+  return {
+    labeled: trackLabeled || albumLabeled,
+    year: (trackLabeled && labeledRemasterYear(trackName)) ||
+      (albumLabeled && labeledRemasterYear(albumName)) || null,
+    source: trackLabeled ? 'track title' : albumLabeled ? 'album title' : null,
+  };
+}
 
 function remasterEvidence(track) {
-  if (REMASTER_PATTERN.test(track?.name || '')) return 2;
-  return REMASTER_PATTERN.test(track?.album?.name || '') ? 1 : 0;
+  const details = remasterDetails(track);
+  return details.source === 'track title' ? 2 : details.labeled ? 1 : 0;
 }
 
 function remasterIdentity(track) {
   if (!Array.isArray(track?.artists) || !track.artists.length ||
       track.artists.some((artist) => !artist?.id)) return '';
-  let title = removeQualifiedBrackets(typeof track.name === 'string' ? track.name : '', REMASTER_PATTERN);
+  const stripRemasterLabel = (label) => label
+    .replace(/\b(?:19|20)\d{2}\b/g, ' ')
+    .replace(/\bremaster(?:ed)?\b/gi, ' ')
+    .replace(/\b(?:digital|newly|version|edition)\b/gi, ' ')
+    .trim();
+  let title = typeof track.name === 'string' ? track.name : '';
+  title = title.replace(/\s*[([]([^\])]+)[\])]\s*/g, (whole, inside) =>
+    REMASTER_PATTERN.test(inside) ? ` ${stripRemasterLabel(inside)} ` : whole,
+  );
   title = title.replace(/\s*[-–—:]\s*([^\n]+)$/g, (whole, suffix) =>
-    REMASTER_PATTERN.test(suffix) ? ' ' : whole,
+    REMASTER_PATTERN.test(suffix) ? ` ${stripRemasterLabel(suffix)} ` : whole,
   );
   const normalized = normalizeText(title);
   return normalized ? `${normalized}::${track.artists.map((artist) => artist.id).join('|')}` : '';
@@ -166,29 +196,55 @@ function remasterCandidates(placements) {
 
 function bestCrossAlbumRemaster(source, candidates, preferences) {
   const sourceTrack = source?.track;
-  if (!sourceTrack?.id || !sourceTrack.album?.id || remasterEvidence(sourceTrack) ||
+  if (!sourceTrack?.id || !sourceTrack.album?.id ||
       !Number.isFinite(sourceTrack.duration_ms) || sourceTrack.duration_ms <= 0) return null;
   if (preferences.manualAlbumOverrides[albumFamilyKey(sourceTrack.album)] === sourceTrack.album.id) return null;
   // A re-recording preference must not be overturned by an older recording's remaster.
   if (preferences.preferTaylorsVersion &&
       /\btaylor'?s version\b/i.test(`${sourceTrack.name} ${sourceTrack.album.name}`)) return null;
-  const eligible = [...(candidates.get(remasterIdentity(sourceTrack))?.values() || [])].filter((candidate) =>
-    candidate.id !== sourceTrack.id && candidate.album.id !== sourceTrack.album.id &&
+  const sourceRemaster = remasterDetails(sourceTrack);
+  const eligible = [...(candidates.get(remasterIdentity(sourceTrack))?.values() || [])].filter((candidate) => {
+    const candidateYear = remasterDetails(candidate).year;
+    return candidate.id !== sourceTrack.id && candidate.album.id !== sourceTrack.album.id &&
     !(preferences.preferExplicit && sourceTrack.explicit && !candidate.explicit) &&
     Number.isFinite(candidate.duration_ms) && candidate.duration_ms > 0 &&
-    Math.abs(candidate.duration_ms - sourceTrack.duration_ms) <= 3000,
-  );
+    Math.abs(candidate.duration_ms - sourceTrack.duration_ms) <= 3000 &&
+    (!sourceRemaster.year || (candidateYear !== null && candidateYear > sourceRemaster.year)) &&
+    (!sourceRemaster.labeled || sourceRemaster.year || candidateYear !== null);
+  });
   if (!eligible.length) return null;
   const sourceIsrc = sourceTrack.external_ids?.isrc;
   const isrcMatch = (candidate) => Number(Boolean(sourceIsrc && candidate.external_ids?.isrc === sourceIsrc));
   eligible.sort((a, b) =>
+    (remasterDetails(b).year || 0) - (remasterDetails(a).year || 0) ||
     remasterEvidence(b) - remasterEvidence(a) ||
     isrcMatch(b) - isrcMatch(a) ||
     (preferences.preferExplicit ? Number(b.explicit) - Number(a.explicit) : 0) ||
     Math.abs(a.duration_ms - sourceTrack.duration_ms) - Math.abs(b.duration_ms - sourceTrack.duration_ms) ||
-    releaseYear(b.album) - releaseYear(a.album) || a.id.localeCompare(b.id),
+    Number(a.album.album_type === 'compilation') - Number(b.album.album_type === 'compilation') ||
+    a.id.localeCompare(b.id),
   );
-  return eligible[0];
+  const replacement = eligible[0];
+  const selectedYear = remasterDetails(replacement).year;
+  const sameYear = eligible.filter((track) => remasterDetails(track).year === selectedYear);
+  // Different ISRCs for equally dated editions leave the recording/master uncertain.
+  const knownIsrcs = new Set(sameYear.map((track) => track.external_ids?.isrc).filter(Boolean));
+  const requiresChoice = sameYear.length > 1 &&
+    (knownIsrcs.size !== 1 || sameYear.some((track) => !track.external_ids?.isrc));
+  const description = selectedYear
+    ? `${selectedYear} remaster labeled in the ${remasterDetails(replacement).source}`
+    : `Remaster labeled in the ${remasterDetails(replacement).source}; mastering year unknown`;
+  const sourceDescription = sourceRemaster.year
+    ? `Current version is labeled ${sourceRemaster.year} remaster.`
+    : sourceRemaster.labeled ? 'Current remaster year is unknown.' : 'Current version has no remaster label.';
+  return {
+    replacement,
+    explanation: `${description}. ${sourceDescription} Album release dates were not used as remaster dates.${requiresChoice ? ' Multiple equally dated candidates cannot be distinguished; choose one manually.' : ''}`,
+    candidateCount: eligible.length,
+    dated: selectedYear !== null,
+    options: eligible,
+    requiresChoice,
+  };
 }
 
 function uniqueById(items) {
@@ -265,6 +321,18 @@ export function analyzeInventory(placements, suppliedPreferences = {}) {
       for (const placement of source.placements) {
         const replacement = bestTrackMatch(placement.track, canonicalTracksByIdentity, preferences);
         if (!replacement || replacement.id === placement.track.id) continue;
+        const sourceRemaster = remasterDetails(placement.track);
+        const replacementRemaster = remasterDetails(replacement);
+        const manualOverride = preferences.manualAlbumOverrides[familyKey] === canonical.album.id;
+        const taylorsVersion = preferences.preferTaylorsVersion &&
+          /\btaylor'?s version\b/i.test(`${replacement.name} ${canonical.album.name}`);
+        if (!manualOverride && !taylorsVersion && sourceRemaster.labeled &&
+            (!replacementRemaster.labeled ||
+              (sourceRemaster.year && (!replacementRemaster.year || replacementRemaster.year < sourceRemaster.year)))) continue;
+        if (!manualOverride && !taylorsVersion && sourceRemaster.labeled && replacementRemaster.labeled &&
+            (!sourceRemaster.year || !replacementRemaster.year || sourceRemaster.year === replacementRemaster.year) &&
+            (!placement.track.external_ids?.isrc ||
+              placement.track.external_ids.isrc !== replacement.external_ids?.isrc)) continue;
         proposals.push({
           playlist: placement.playlist,
           position: placement.position,
@@ -293,8 +361,9 @@ export function analyzeInventory(placements, suppliedPreferences = {}) {
   const remasters = remasterCandidates(placements);
   const remasterGroups = new Map();
   for (const placement of placements) {
-    const replacement = bestCrossAlbumRemaster(placement, remasters, preferences);
-    if (!replacement) continue;
+    const recommendation = bestCrossAlbumRemaster(placement, remasters, preferences);
+    if (!recommendation) continue;
+    const { replacement } = recommendation;
     const key = placementKey(placement);
     const existing = existingProposals.get(key);
     if (existing) {
@@ -315,6 +384,12 @@ export function analyzeInventory(placements, suppliedPreferences = {}) {
       sourceAlbum: placement.track.album,
       canonicalAlbum: replacement.album,
       crossAlbumRemaster: true,
+      explanation: recommendation.explanation,
+      candidateCount: recommendation.candidateCount,
+      datedRemaster: recommendation.dated,
+      candidateOptions: recommendation.options,
+      requiresCandidateChoice: recommendation.requiresChoice,
+      candidateChosen: false,
     });
   }
   for (const family of families) {

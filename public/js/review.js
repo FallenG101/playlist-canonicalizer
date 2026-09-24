@@ -9,6 +9,7 @@ export function flattenReviewItems(analysis) {
   return analysis.families.flatMap((family) =>
     family.proposals.map((proposal) => ({
       ...proposal,
+      proposalRef: proposal,
       id: proposalId(proposal),
       familyKey: family.key,
       familyArtist: family.artist,
@@ -16,6 +17,36 @@ export function flattenReviewItems(analysis) {
       reasons: [...family.reasons],
     })),
   );
+}
+
+export function chooseRecommendationCandidate(proposal, candidateId) {
+  if (!proposal?.crossAlbumRemaster || !Array.isArray(proposal.candidateOptions)) {
+    throw new Error('This recommendation does not offer alternate remasters.');
+  }
+  const candidate = proposal.candidateOptions.find((track) => track?.id === candidateId);
+  if (!candidate?.album?.id || candidate.is_playable === false || candidate.restrictions?.reason) {
+    throw new Error('That remaster is no longer an eligible candidate. Scan again.');
+  }
+  return {
+    ...proposal,
+    replacementTrack: candidate,
+    canonicalAlbum: candidate.album,
+    candidateChosen: true,
+    explanation: `Manually selected “${candidate.name}” from “${candidate.album.name}”. Compare both recordings before approving.`,
+  };
+}
+
+export function restoreRecommendationChoices(analysis, choices) {
+  if (!(choices instanceof Map)) return analysis;
+  for (const family of analysis.families) {
+    for (const proposal of family.proposals) {
+      const candidateId = choices.get(proposal.sourceTrack?.id);
+      if (!candidateId || !proposal.crossAlbumRemaster ||
+          !proposal.candidateOptions?.some((track) => track.id === candidateId)) continue;
+      Object.assign(proposal, chooseRecommendationCandidate(proposal, candidateId));
+    }
+  }
+  return analysis;
 }
 
 export function decisionFor(decisions, itemId) {

@@ -76,6 +76,9 @@ export function buildPlaylistApplyPlan({ playlist, entries, approvedItems }) {
     if (!approved || typeof approved !== 'object') {
       throw new ApplyPlanError('An approved change is invalid. Apply was stopped.', 'INVALID_APPROVAL');
     }
+    if (approved.requiresCandidateChoice === true && approved.candidateChosen !== true) {
+      throw new ApplyPlanError('Choose a remaster for every ambiguous recommendation before applying.', 'CANDIDATE_NOT_CHOSEN');
+    }
     if (approved.playlist?.id !== playlist.id) {
       throw new ApplyPlanError('An approved change belongs to a different playlist. Apply was stopped.', 'MIXED_PLAYLIST');
     }

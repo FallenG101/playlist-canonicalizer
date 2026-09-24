@@ -5,6 +5,7 @@ import {
   analyzeInventory,
   baseAlbumName,
   normalizeText,
+  remasterDetails,
   trackIdentity,
 } from '../public/js/canonicalizer.js';
 
@@ -61,6 +62,8 @@ test('keeps meaningful performance qualifiers in track identity', () => {
   const base = track('one', 'Song', album('album', 'Record'));
   assert.equal(trackIdentity({ ...base, name: "Song (Taylor's Version)" }), trackIdentity(base));
   assert.notEqual(trackIdentity({ ...base, name: 'Song (Live)' }), trackIdentity(base));
+  assert.notEqual(trackIdentity({ ...base, name: 'Song (Radio Edit)' }), trackIdentity(base));
+  assert.notEqual(trackIdentity({ ...base, name: 'Song (Single Version)' }), trackIdentity(base));
 });
 
 test("prefers Taylor's Version and creates read-only replacement proposals", () => {
@@ -239,6 +242,122 @@ test('remaster preference does not downgrade an explicit track to clean', () => 
   const result = analyzeInventory([
     placement(track('explicit', 'Song', originalAlbum, true), 'Original'),
     placement(track('clean', 'Song', remasterAlbum, false), 'Remaster'),
+  ]);
+  assert.equal(result.proposalCount, 0);
+});
+
+test('newest labeled remaster beats an older remaster without using compilation release date', () => {
+  const frank = { id: 'frank', name: 'Frank Sinatra' };
+  const originalAlbum = { ...album('original', 'Original LP', '1956-01-01'), artists: [frank] };
+  const olderAlbum = { ...album('older', 'First Reissue', '2014-01-01'), artists: [frank] };
+  const newerAlbum = { ...album('newer', 'Second Reissue', '2024-01-01'), artists: [frank] };
+  const compilationAlbum = { ...album('compilation', 'Hits Collection', '2026-01-01'), artists: [frank], album_type: 'compilation' };
+  const liveAlbum = { ...album('live', 'At the Sands', '2025-01-01'), artists: [frank] };
+  const make = (id, name, onAlbum) => ({
+    ...track(id, name, onAlbum, false, 210_000), artists: [frank],
+  });
+  const result = analyzeInventory([
+    placement(make('og', 'My Way', originalAlbum), 'Original'),
+    placement(make('old', 'My Way - 2014 Remaster', olderAlbum), 'Old remaster'),
+    placement(make('new', 'My Way (2024 Remastered)', newerAlbum), 'New remaster'),
+    placement(make('comp', 'My Way', compilationAlbum), 'Compilation'),
+    placement(make('live', 'My Way (Live)', liveAlbum), 'Live'),
+  ]);
+  const proposals = result.families.flatMap((family) => family.proposals);
+  assert.equal(proposals.find((item) => item.sourceTrack.id === 'og').replacementTrack.id, 'new');
+  assert.equal(proposals.find((item) => item.sourceTrack.id === 'old').replacementTrack.id, 'new');
+  assert.equal(proposals.some((item) => item.sourceTrack.id === 'new'), false);
+  assert.equal(proposals.some((item) => item.replacementTrack.id === 'comp'), false);
+  assert.equal(proposals.some((item) => item.replacementTrack.id === 'live'), false);
+  assert.equal(remasterDetails(make('new', 'My Way (2024 Remastered)', newerAlbum)).year, 2024);
+});
+
+test('finds a track-labeled remaster on a Various Artists compilation', () => {
+  const frank = { id: 'frank', name: 'Frank Sinatra' };
+  const various = { id: 'various', name: 'Various Artists' };
+  const originalAlbum = { ...album('original', 'Original LP'), artists: [frank] };
+  const compilation = { ...album('compilation', 'Classic Hits'), artists: [various], album_type: 'compilation' };
+  const original = { ...track('old', 'Song', originalAlbum), artists: [frank] };
+  const remaster = { ...track('new', 'Song - 2024 Remaster', compilation), artists: [frank] };
+  const result = analyzeInventory([placement(original, 'Original'), placement(remaster, 'Compilation')]);
+  assert.equal(result.families.flatMap((family) => family.proposals)
+    .find((item) => item.sourceTrack.id === 'old').replacementTrack.id, 'new');
+});
+
+test('preserves mono and live recording qualifiers when stripping remaster labels', () => {
+  const baseAlbum = album('base', 'Original');
+  const remasterAlbum = album('remaster', 'Collection');
+  const result = analyzeInventory([
+    placement(track('studio', 'Song', baseAlbum), 'Studio'),
+    placement(track('mono', 'Song (2024 Mono Remaster)', remasterAlbum), 'Mono'),
+    placement(track('live', 'Song (Live) - 2024 Remaster', remasterAlbum), 'Live'),
+  ]);
+  assert.equal(result.proposalCount, 0);
+});
+
+test('does not infer a remaster year from an album release date', () => {
+  const release = album('release', 'Original', '2014-01-01');
+  const compilation = { ...album('compilation', 'Compilation (Remastered)', '2026-01-01'), album_type: 'compilation' };
+  assert.equal(remasterDetails(track('x', 'Song', compilation)).year, null);
+  const result = analyzeInventory([
+    placement(track('old', 'Song (2014 Remaster)', release), 'Old'),
+    placement(track('new', 'Song', compilation), 'Compilation'),
+  ]);
+  assert.equal(result.families.flatMap((family) => family.proposals)
+    .some((item) => item.sourceTrack.id === 'old'), false);
+});
+
+test('equally dated remasters with unverified master IDs require a manual candidate choice', () => {
+  const original = album('original', 'Original');
+  const first = album('first', 'Collection One');
+  const second = album('second', 'Collection Two');
+  const result = analyzeInventory([
+    placement(track('old', 'Song', original), 'Original'),
+    placement(track('first-track', 'Song (2024 Remaster)', first), 'First'),
+    placement(track('second-track', 'Song (2024 Remaster)', second), 'Second'),
+  ]);
+  const proposal = result.families.flatMap((family) => family.proposals)
+    .find((item) => item.sourceTrack.id === 'old');
+  assert.equal(proposal.requiresCandidateChoice, true);
+  assert.equal(proposal.candidateChosen, false);
+  assert.deepEqual(proposal.candidateOptions.map((candidate) => candidate.id).sort(), ['first-track', 'second-track']);
+});
+
+test('same-year remasters sharing an ISRC can be ranked without a forced choice', () => {
+  const original = album('original', 'Original');
+  const first = album('first', 'Reissue');
+  const second = album('second', 'Compilation');
+  const withIsrc = (id, onAlbum) => ({
+    ...track(id, 'Song (2024 Remaster)', onAlbum), external_ids: { isrc: 'USAAA2400001' },
+  });
+  const result = analyzeInventory([
+    placement(track('old', 'Song', original), 'Original'),
+    placement(withIsrc('first-track', first), 'First'),
+    placement(withIsrc('second-track', second), 'Second'),
+  ]);
+  const proposal = result.families.flatMap((family) => family.proposals)
+    .find((item) => item.sourceTrack.id === 'old');
+  assert.equal(proposal.requiresCandidateChoice, false);
+});
+
+test('album-family scoring cannot downgrade a newer labeled remaster', () => {
+  const newer = album('newer', 'Record (2024 Remaster)', '2024-01-01', 9);
+  const older = album('older', 'Record (2014 Remaster)', '2026-01-01', 50);
+  const result = analyzeInventory([
+    placement(track('new', 'Song (2024 Remaster)', newer), 'New'),
+    placement(track('old', 'Song (2014 Remaster)', older), 'Old'),
+  ]);
+  const proposals = result.families.flatMap((family) => family.proposals);
+  assert.equal(proposals.some((item) => item.sourceTrack.id === 'new'), false);
+  assert.equal(proposals.find((item) => item.sourceTrack.id === 'old').replacementTrack.id, 'new');
+});
+
+test('album-family scoring cannot choose between same-year remasters with unverified masters', () => {
+  const first = album('first', 'Record (2024 Remaster)', '2024-01-01', 8);
+  const second = album('second', 'Record (2024 Remaster)', '2025-01-01', 18);
+  const result = analyzeInventory([
+    placement(track('first-track', 'Song (2024 Remaster)', first), 'First'),
+    placement(track('second-track', 'Song (2024 Remaster)', second), 'Second'),
   ]);
   assert.equal(result.proposalCount, 0);
 });

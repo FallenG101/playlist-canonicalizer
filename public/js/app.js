@@ -12,11 +12,13 @@ import {
 import { buildPlaylistApplyPlan, classifyPlaylistState } from './apply.js';
 import { analyzeInventory } from './canonicalizer.js';
 import {
+  chooseRecommendationCandidate,
   decisionCounts,
   decisionFor,
   flattenReviewItems,
   groupReviewItems,
   proposalId,
+  restoreRecommendationChoices,
 } from './review.js';
 import { playlistItemCount, SpotifyClient } from './spotify.js';
 import { PlaylistScanCache } from './scan-cache.js';
@@ -48,11 +50,13 @@ const startSelectedScanButton = $('#start-selected-scan-button');
 const scanCache = new PlaylistScanCache();
 const spotify = new SpotifyClient(accessToken, { scanCache });
 const REVIEW_STORAGE_PREFIX = 'canonicalizer.review.decisions';
+const CHOICE_STORAGE_PREFIX = 'canonicalizer.review.choices';
 const INFLIGHT_STORAGE_PREFIX = 'canonicalizer.apply.inflight';
 const RATE_LIMIT_UNTIL_KEY = 'canonicalizer.spotify.rateLimitUntil';
 let currentScan = null;
 let reviewItems = [];
 let reviewDecisions = new Map();
+let reviewChoices = new Map();
 let reviewMode = 'playlist';
 let reviewFilter = 'all';
 let reviewGroupIndices = { playlist: 0, album: 0 };
@@ -233,13 +237,30 @@ function reviewStorageKey(accountId) {
   return `${REVIEW_STORAGE_PREFIX}.${accountId}`;
 }
 
+function choiceStorageKey(accountId) {
+  return `${CHOICE_STORAGE_PREFIX}.${accountId}`;
+}
+
+function loadReviewChoices(accountId) {
+  try {
+    const stored = JSON.parse(localStorage.getItem(choiceStorageKey(accountId)) || '{}');
+    if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return new Map();
+    return new Map(Object.entries(stored).filter(([sourceId, candidateId]) =>
+      /^[A-Za-z0-9]+$/.test(sourceId) && /^[A-Za-z0-9]+$/.test(candidateId),
+    ));
+  } catch {
+    return new Map();
+  }
+}
+
 function loadReviewDecisions(accountId, items) {
-  const validIds = new Set(items.map((item) => item.id));
+  const validItems = new Map(items.map((item) => [item.id, item]));
   try {
     const stored = JSON.parse(localStorage.getItem(reviewStorageKey(accountId)) || '{}');
     return new Map(
       Object.entries(stored).filter(
-        ([id, state]) => validIds.has(id) && ['approved', 'skipped'].includes(state),
+        ([id, state]) => validItems.has(id) && ['approved', 'skipped'].includes(state) &&
+          (state !== 'approved' || !validItems.get(id).requiresCandidateChoice || validItems.get(id).candidateChosen),
       ),
     );
   } catch {
@@ -517,6 +538,39 @@ function setDecision(itemId, nextState) {
   renderReview();
 }
 
+function chooseCandidate(item, candidateId) {
+  if (!currentScan || applyInProgress || scanInProgress || pendingApplyPlan) return;
+  const matching = reviewItems.filter((other) =>
+    other.crossAlbumRemaster && other.sourceTrack.id === item.sourceTrack.id &&
+    other.candidateOptions?.some((candidate) => candidate.id === candidateId),
+  );
+  if (!matching.length) return;
+  try {
+    const updates = matching.map((other) => ({
+      other,
+      chosen: chooseRecommendationCandidate(other.proposalRef, candidateId),
+    }));
+    const nextChoices = new Map(reviewChoices);
+    nextChoices.set(item.sourceTrack.id, candidateId);
+    localStorage.setItem(choiceStorageKey(currentScan.inventory.profile.id), JSON.stringify(Object.fromEntries(nextChoices)));
+    for (const { other, chosen } of updates) {
+      reviewDecisions.delete(other.id);
+      for (const candidate of other.candidateOptions) {
+        reviewDecisions.delete(proposalId({ ...other, replacementTrack: candidate }));
+      }
+      Object.assign(other.proposalRef, chosen);
+    }
+    reviewChoices = nextChoices;
+    persistReviewDecisions();
+    reviewItems = flattenReviewItems(currentScan.analysis);
+    renderReview();
+  } catch (error) {
+    showToast(error.message);
+    reviewItems = flattenReviewItems(currentScan.analysis);
+    renderReview();
+  }
+}
+
 function decisionButton(label, kind, item) {
   const state = decisionFor(reviewDecisions, item.id);
   const selected = state === kind;
@@ -526,6 +580,10 @@ function decisionButton(label, kind, item) {
     text: label,
   });
   button.setAttribute('aria-pressed', String(selected));
+  if (kind === 'approved' && item.requiresCandidateChoice && !item.candidateChosen) {
+    button.disabled = true;
+    button.title = 'Choose a remaster above before approving.';
+  }
   button.addEventListener('click', () => setDecision(item.id, kind));
   return button;
 }
@@ -539,7 +597,9 @@ function reviewItemCard(item) {
   const copy = element('div', { className: 'review-item-copy' }, [
     element('div', { className: 'review-context' }, [
       element('span', { text: context }),
-      element('span', { className: 'confidence-dot', text: `${item.confidence}% match` }),
+      element('span', { className: 'confidence-dot', text: item.crossAlbumRemaster
+        ? (item.requiresCandidateChoice && !item.candidateChosen ? 'Choice needed' : 'Remaster suggestion')
+        : `${item.confidence}% match` }),
     ]),
     element('div', { className: 'track-change' }, [
       element('div', { className: 'track-version' }, [
@@ -549,15 +609,32 @@ function reviewItemCard(item) {
       ]),
       element('span', { className: 'change-arrow', text: '→' }),
       element('div', { className: 'track-version' }, [
-        element('span', { text: 'PROPOSED' }),
+        element('span', { text: item.requiresCandidateChoice && !item.candidateChosen ? 'CANDIDATE — CHOOSE BELOW' : 'PROPOSED' }),
         spotifyTrackLink(item.replacementTrack),
         spotifyAlbumLink(item.canonicalAlbum),
       ]),
     ]),
-    ...(item.crossAlbumRemaster ? [element('small', {
-      text: 'Remaster found on a different album. Listen to both recordings before approving.',
+    ...(item.crossAlbumRemaster ? [element('small', { className: 'recommendation-evidence',
+      text: `${item.explanation} Listen to both recordings before approving.`,
     })] : []),
   ]);
+  if (item.crossAlbumRemaster && item.candidateOptions?.length > 1) {
+    const picker = element('select', { className: 'candidate-select' });
+    picker.setAttribute('aria-label', `Choose remaster for ${item.sourceTrack.name}`);
+    if (item.requiresCandidateChoice && !item.candidateChosen) {
+      const placeholder = element('option', { text: 'Choose a remaster to review…' });
+      placeholder.value = '';
+      picker.append(placeholder);
+    }
+    for (const candidate of item.candidateOptions) {
+      const option = element('option', { text: `${candidate.name} — ${candidate.album.name}` });
+      option.value = candidate.id;
+      picker.append(option);
+    }
+    picker.value = item.requiresCandidateChoice && !item.candidateChosen ? '' : item.replacementTrack.id;
+    picker.addEventListener('change', () => chooseCandidate(item, picker.value));
+    copy.append(element('label', { className: 'candidate-label', text: 'Scanned remaster candidates' }), picker);
+  }
   const actions = element('div', { className: 'decision-actions' }, [
     decisionButton('✓ Approve', 'approved', item),
     decisionButton('Skip', 'skipped', item),
@@ -702,6 +779,8 @@ function renderResults(inventory, analysis) {
   $('#metric-albums').textContent = formatNumber(analysis.albumCount);
   $('#metric-proposals').textContent = formatNumber(analysis.proposalCount);
 
+  reviewChoices = loadReviewChoices(inventory.profile.id);
+  restoreRecommendationChoices(analysis, reviewChoices);
   reviewItems = flattenReviewItems(analysis);
   reviewDecisions = loadReviewDecisions(inventory.profile.id, reviewItems);
   reviewMode = 'playlist';
@@ -752,6 +831,12 @@ function exportableScan(scan) {
       proposals: family.proposals.map((proposal) => ({
         id: proposalId(proposal),
         crossAlbumRemaster: proposal.crossAlbumRemaster === true,
+        explanation: proposal.explanation || null,
+        candidateChosen: proposal.candidateChosen === true,
+        candidateCount: proposal.candidateCount || 0,
+        candidateOptions: proposal.candidateOptions?.map((track) => ({
+          id: track.id, name: track.name, albumId: track.album?.id, albumName: track.album?.name,
+        })) || [],
         decision: decisionFor(reviewDecisions, proposalId(proposal)),
         playlistId: proposal.playlist.id,
         playlistName: proposal.playlist.name,
@@ -938,7 +1023,7 @@ clientIdInput.addEventListener('input', () => {
 });
 
 async function clearStoredSpotifyData() {
-  const prefixes = [REVIEW_STORAGE_PREFIX, INFLIGHT_STORAGE_PREFIX, 'canonicalizer.backup.'];
+  const prefixes = [REVIEW_STORAGE_PREFIX, CHOICE_STORAGE_PREFIX, INFLIGHT_STORAGE_PREFIX, 'canonicalizer.backup.'];
   for (const key of Object.keys(localStorage)) {
     if (prefixes.some((prefix) => key.startsWith(prefix))) localStorage.removeItem(key);
   }
@@ -958,6 +1043,7 @@ disconnectButton.addEventListener('click', async () => {
   currentScan = null;
   reviewItems = [];
   reviewDecisions = new Map();
+  reviewChoices = new Map();
   pendingApplyPlan = null;
   appliedPlaylists = new Set();
   resultsView.classList.add('hidden');

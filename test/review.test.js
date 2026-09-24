@@ -1,11 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  chooseRecommendationCandidate,
   decisionCounts,
   decisionFor,
   flattenReviewItems,
   groupReviewItems,
   proposalId,
+  restoreRecommendationChoices,
 } from '../public/js/review.js';
 
 function proposal(playlistId, playlistName, position, sourceId, replacementId) {
@@ -78,4 +80,37 @@ test('counts pending, approved, and skipped decisions', () => {
     decided: 2,
   });
   assert.equal(decisionFor(decisions, items[2].id), 'pending');
+});
+
+test('manual remaster choice can only select an offered candidate', () => {
+  const base = proposal('p1', 'Playlist', 0, 'old', 'first');
+  const first = { id: 'first', name: 'Song (2014 Remaster)', album: { id: 'first-album', name: 'First' } };
+  const second = { id: 'second', name: 'Song (2024 Remaster)', album: { id: 'second-album', name: 'Second' } };
+  const recommendation = {
+    ...base, crossAlbumRemaster: true, candidateOptions: [first, second],
+    requiresCandidateChoice: true, candidateChosen: false,
+  };
+  assert.throws(() => chooseRecommendationCandidate(recommendation, 'unrelated'), /eligible/);
+  const chosen = chooseRecommendationCandidate(recommendation, 'second');
+  assert.equal(chosen.candidateChosen, true);
+  assert.equal(chosen.replacementTrack.id, 'second');
+  assert.equal(chosen.canonicalAlbum.id, 'second-album');
+  assert.equal(recommendation.candidateChosen, false);
+});
+
+test('saved candidate choices are restored only when still offered and never count as approval', () => {
+  const first = { id: 'first', name: 'Song (2014 Remaster)', album: { id: 'first-album', name: 'First' } };
+  const second = { id: 'second', name: 'Song (2024 Remaster)', album: { id: 'second-album', name: 'Second' } };
+  const makeAnalysis = () => ({ families: [{
+    key: 'remaster::first-album', artist: 'Artist', confidence: 65, reasons: [],
+    proposals: [{ ...proposal('p1', 'Playlist', 0, 'old', 'first'), crossAlbumRemaster: true,
+      candidateOptions: [first, second], requiresCandidateChoice: true, candidateChosen: false }],
+  }] });
+  const restored = restoreRecommendationChoices(makeAnalysis(), new Map([['old', 'second']]));
+  const item = flattenReviewItems(restored)[0];
+  assert.equal(item.replacementTrack.id, 'second');
+  assert.equal(item.candidateChosen, true);
+  assert.equal(decisionFor(new Map(), item.id), 'pending');
+  const missing = restoreRecommendationChoices(makeAnalysis(), new Map([['old', 'missing']]));
+  assert.equal(missing.families[0].proposals[0].candidateChosen, false);
 });

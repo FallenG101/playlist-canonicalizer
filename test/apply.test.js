@@ -56,6 +56,17 @@ test('blocks approvals belonging to a different playlist', () => {
   );
 });
 
+test('blocks an ambiguous remaster before a candidate is manually chosen', () => {
+  const ambiguous = { ...approval(0, 'one', 'replacement'), requiresCandidateChoice: true, candidateChosen: false };
+  assert.throws(
+    () => buildPlaylistApplyPlan({ playlist, entries: [entry('one')], approvedItems: [ambiguous] }),
+    (error) => error instanceof ApplyPlanError && error.code === 'CANDIDATE_NOT_CHOSEN',
+  );
+  assert.equal(buildPlaylistApplyPlan({
+    playlist, entries: [entry('one')], approvedItems: [{ ...ambiguous, candidateChosen: true }],
+  }).changes.length, 1);
+});
+
 test('blocks an approval without its playlist and exact source URI', () => {
   const missingPlaylist = approval(0, 'one', 'replacement');
   delete missingPlaylist.playlist;
